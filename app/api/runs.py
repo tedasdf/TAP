@@ -131,7 +131,7 @@ def create_run(payload: RunCreate) -> RunResponse:
                     None,
                     None,
                     None,
-                    payload.log_path,
+                    None,
                 ),
             )
 
