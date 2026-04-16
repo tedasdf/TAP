@@ -1,0 +1,118 @@
+from typing import Any
+
+from fastapi import APIRouter, HTTPException
+
+from app.db import get_db
+from app.schemas import JobUpdate
+from app.services.jobs import derive_run_status
+
+
+router = APIRouter(tags=["jobs"])
+
+
+def ensure_job_exists(job_id: str) -> dict[str, Any]:
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT * FROM jobs WHERE job_id = ?",
+            (job_id,),
+        ).fetchone()
+
+    if row is None:
+        raise HTTPException(status_code=404, detail=f"Job '{job_id}' not found")
+
+    return dict(row)
+
+
+@router.get("/jobs")
+def list_jobs() -> list[dict[str, Any]]:
+    with get_db() as conn:
+        rows = conn.execute(
+            """
+            SELECT *
+            FROM jobs
+            ORDER BY COALESCE(datetime(start_time), datetime(end_time)) DESC
+            """
+        ).fetchall()
+
+    return [dict(row) for row in rows]
+
+
+@router.get("/jobs/{job_id}")
+def get_job(job_id: str) -> dict[str, Any]:
+    return ensure_job_exists(job_id)
+
+
+@router.patch("/jobs/{job_id}")
+def update_job(job_id: str, payload: JobUpdate) -> dict[str, Any]:
+    updates = payload.model_dump(exclude_none=True)
+    if not updates:
+        return ensure_job_exists(job_id)
+
+    with get_db() as conn:
+        existing = conn.execute(
+            "SELECT * FROM jobs WHERE job_id = ?",
+            (job_id,),
+        ).fetchone()
+
+        if existing is None:
+            raise HTTPException(status_code=404, detail=f"Job '{job_id}' not found")
+
+        set_clause = ", ".join(f"{key} = ?" for key in updates.keys())
+        values = list(updates.values()) + [job_id]
+
+        conn.execute(
+            f"UPDATE jobs SET {set_clause} WHERE job_id = ?",
+            values,
+        )
+
+        updated = conn.execute(
+            "SELECT * FROM jobs WHERE job_id = ?",
+            (job_id,),
+        ).fetchone()
+
+        run_row = conn.execute(
+            "SELECT status FROM runs WHERE run_id = ?",
+            (updated["run_id"],),
+        ).fetchone()
+
+        new_run_status = derive_run_status(
+            current_status=run_row["status"],
+            queue_state=updated["queue_state"],
+            execution_state=updated["execution_state"],
+            exit_status=updated["exit_status"],
+        )
+
+        conn.execute(
+            "UPDATE runs SET status = ? WHERE run_id = ?",
+            (new_run_status, updated["run_id"]),
+        )
+
+    return dict(updated)
+
+
+@router.get("/jobs/{job_id}/logs")
+def get_job_logs(job_id: str, lines: int = 50) -> dict[str, Any]:
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT * FROM jobs WHERE job_id = ?",
+            (job_id,),
+        ).fetchone()
+
+    if row is None:
+        raise HTTPException(status_code=404, detail=f"Job '{job_id}' not found")
+
+    log_path = row["log_path"]
+    if not log_path:
+        raise HTTPException(status_code=404, detail="No log path stored for this job")
+
+    try:
+        with open(log_path, "r", encoding="utf-8", errors="replace") as f:
+            content = f.read().splitlines()
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail=f"Log file not found: {log_path}")
+
+    return {
+        "job_id": job_id,
+        "log_path": log_path,
+        "lines": content[-lines:],
+    }
