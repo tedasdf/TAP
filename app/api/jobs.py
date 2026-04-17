@@ -91,8 +91,9 @@ def update_job(job_id: str, payload: JobUpdate) -> dict[str, Any]:
 
     return dict(updated)
 
+
 @router.get("/jobs/{job_id}/logs")
-def get_job_logs(job_id: str, lines: int = 50) -> dict[str, Any]:
+def get_job_logs(job_id: str, lines: int = 50, stream: str = "out") -> dict[str, Any]:
     with get_db() as conn:
         row = conn.execute(
             "SELECT * FROM jobs WHERE job_id = ?",
@@ -102,16 +103,22 @@ def get_job_logs(job_id: str, lines: int = 50) -> dict[str, Any]:
     if row is None:
         raise HTTPException(status_code=404, detail=f"Job '{job_id}' not found")
 
-    queue_state = (row["queue_state"] or "").lower()
-    execution_state = (row["execution_state"] or "").lower()
-    log_path = row["log_path"]
-
     if lines <= 0:
         raise HTTPException(status_code=400, detail="'lines' must be greater than 0")
+
+    stream = stream.lower()
+    if stream not in {"out", "err"}:
+        raise HTTPException(status_code=400, detail="stream must be 'out' or 'err'")
+
+    queue_state = (row["queue_state"] or "").lower()
+    execution_state = (row["execution_state"] or "").lower()
+
+    log_path = row["log_path"] if stream == "out" else row["error_log_path"]
 
     if not log_path and queue_state in {"pending", "queued"}:
         return {
             "job_id": job_id,
+            "stream": stream,
             "status": "pending",
             "message": "Job has not started yet, so no log path is available.",
             "lines": [],
@@ -120,13 +127,14 @@ def get_job_logs(job_id: str, lines: int = 50) -> dict[str, Any]:
     if not log_path and execution_state in {"pending", "queued"}:
         return {
             "job_id": job_id,
+            "stream": stream,
             "status": "pending",
             "message": "Job has not started yet, so no log path is available.",
             "lines": [],
         }
 
     if not log_path:
-        raise HTTPException(status_code=404, detail="No log path stored for this job")
+        raise HTTPException(status_code=404, detail=f"No {stream} log path stored for this job")
 
     remote_command = f"tail -n {lines} {shlex.quote(log_path)}"
     code, stdout, stderr = run_ssh_command(remote_command)
@@ -139,6 +147,7 @@ def get_job_logs(job_id: str, lines: int = 50) -> dict[str, Any]:
 
     return {
         "job_id": job_id,
+        "stream": stream,
         "status": execution_state or queue_state or "unknown",
         "log_path": log_path,
         "lines": stdout.splitlines(),
