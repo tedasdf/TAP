@@ -1,0 +1,12 @@
+services:
+  tap:
+    build: .
+    container_name: tap-api
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    volumes:
+      - ./data:/app/data
+      - ~/.ssh:/root/.ssh:ro
+    restart: unless-stopped
