@@ -25,7 +25,4 @@ class Settings:
     WANDB_ENTITY: str = os.environ.get("WANDB_ENTITY", "")
     WANDB_PROJECT: str = os.environ.get("WANDB_PROJECT", "")
 
-
-settings = Settings()
-
 settings = Settings()
