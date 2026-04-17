@@ -4,6 +4,7 @@
 # POST /runs/{run_id}/cancel
 
 import json
+import shlex
 import uuid
 from datetime import datetime, timezone
 from typing import Any
@@ -12,7 +13,7 @@ from fastapi import APIRouter, HTTPException
 
 from app.db import get_db
 from app.schemas import RunCreate, RunResponse
-from app.services.launcher import parse_slurm_job_id, launch_training_run
+from app.services.launcher import parse_slurm_job_id, launch_training_run, run_ssh_command
 
 
 router = APIRouter(tags=["runs"])
@@ -44,7 +45,6 @@ def ensure_run_exists(run_id: str) -> dict[str, Any]:
 
     return dict(row)
 
-
 @router.post("/runs", response_model=RunResponse)
 def create_run(payload: RunCreate) -> RunResponse:
     run_id = str(uuid.uuid4())
@@ -54,24 +54,25 @@ def create_run(payload: RunCreate) -> RunResponse:
     slurm_job_id: str | None = None
     error_message: str | None = None
 
-    code, stdout, stderr, slurm_job_id = launch_training_run(
-        run_name=payload.name,
-        git_commit=payload.git_commit,
-        config_path=payload.config_path,
-        config_overrides=payload.config_overrides,
-        submit_script=payload.submit_script,
-    )
+    if payload.launch_now:
+        code, stdout, stderr, slurm_job_id = launch_training_run(
+            run_name=payload.name,
+            git_commit=payload.git_commit,
+            config_path=payload.config_path,
+            config_overrides=payload.config_overrides,
+            submit_script=payload.submit_script,
+        )
 
-    combined_output = "\n".join(part for part in [stdout, stderr] if part)
+        combined_output = "\n".join(part for part in [stdout, stderr] if part)
 
-    if code == 0 and slurm_job_id:
-        status = "queued"
-    elif code == 0:
-        status = "created"
-        error_message = "Launch command succeeded but no Slurm job ID was parsed"
-    else:
-        status = "failed"
-        error_message = combined_output or f"Launch command failed with exit code {code}"
+        if code == 0 and slurm_job_id:
+            status = "queued"
+        elif code == 0:
+            status = "created"
+            error_message = "Launch succeeded but no Slurm job ID was parsed"
+        else:
+            status = "failed"
+            error_message = combined_output or f"Launch failed with exit code {code}"
 
     with get_db() as conn:
         conn.execute(
@@ -176,11 +177,22 @@ def get_run(run_id: str) -> dict[str, Any]:
     item["config_overrides"] = json_loads(item.get("config_overrides"))
     return item
 
-
 @router.post("/runs/{run_id}/cancel")
 def cancel_run(run_id: str) -> dict[str, str]:
     run_row = ensure_run_exists(run_id)
     slurm_job_id = run_row.get("slurm_job_id")
+
+    if not slurm_job_id:
+        raise HTTPException(status_code=400, detail="No Slurm job ID associated with this run")
+
+    remote_command = f"scancel {shlex.quote(slurm_job_id)}"
+    code, stdout, stderr = run_ssh_command(remote_command)
+
+    if code != 0:
+        raise HTTPException(
+            status_code=500,
+            detail=stderr or f"Failed to cancel Slurm job {slurm_job_id}",
+        )
 
     with get_db() as conn:
         conn.execute(
@@ -188,14 +200,13 @@ def cancel_run(run_id: str) -> dict[str, str]:
             ("cancelled", "Cancelled from TAP", run_id),
         )
 
-        if slurm_job_id:
-            conn.execute(
-                """
-                UPDATE jobs
-                SET queue_state = ?, execution_state = ?
-                WHERE job_id = ?
-                """,
-                ("cancelled", "cancelled", slurm_job_id),
-            )
+        conn.execute(
+            """
+            UPDATE jobs
+            SET queue_state = ?, execution_state = ?
+            WHERE job_id = ?
+            """,
+            ("cancelled", "cancelled", slurm_job_id),
+        )
 
     return {"run_id": run_id, "status": "cancelled"}

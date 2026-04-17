@@ -1,3 +1,4 @@
+import shlex
 from typing import Any
 
 from fastapi import APIRouter, HTTPException
@@ -5,6 +6,7 @@ from fastapi import APIRouter, HTTPException
 from app.db import get_db
 from app.schemas import JobUpdate
 from app.services.jobs import derive_run_status
+from app.services.launcher import run_ssh_command
 
 
 router = APIRouter(tags=["jobs"])
@@ -89,7 +91,6 @@ def update_job(job_id: str, payload: JobUpdate) -> dict[str, Any]:
 
     return dict(updated)
 
-
 @router.get("/jobs/{job_id}/logs")
 def get_job_logs(job_id: str, lines: int = 50) -> dict[str, Any]:
     with get_db() as conn:
@@ -101,18 +102,44 @@ def get_job_logs(job_id: str, lines: int = 50) -> dict[str, Any]:
     if row is None:
         raise HTTPException(status_code=404, detail=f"Job '{job_id}' not found")
 
+    queue_state = (row["queue_state"] or "").lower()
+    execution_state = (row["execution_state"] or "").lower()
     log_path = row["log_path"]
+
+    if lines <= 0:
+        raise HTTPException(status_code=400, detail="'lines' must be greater than 0")
+
+    if not log_path and queue_state in {"pending", "queued"}:
+        return {
+            "job_id": job_id,
+            "status": "pending",
+            "message": "Job has not started yet, so no log path is available.",
+            "lines": [],
+        }
+
+    if not log_path and execution_state in {"pending", "queued"}:
+        return {
+            "job_id": job_id,
+            "status": "pending",
+            "message": "Job has not started yet, so no log path is available.",
+            "lines": [],
+        }
+
     if not log_path:
         raise HTTPException(status_code=404, detail="No log path stored for this job")
 
-    try:
-        with open(log_path, "r", encoding="utf-8", errors="replace") as f:
-            content = f.read().splitlines()
-    except FileNotFoundError:
-        raise HTTPException(status_code=404, detail=f"Log file not found: {log_path}")
+    remote_command = f"tail -n {lines} {shlex.quote(log_path)}"
+    code, stdout, stderr = run_ssh_command(remote_command)
+
+    if code != 0:
+        raise HTTPException(
+            status_code=404,
+            detail=stderr or f"Could not read log file: {log_path}",
+        )
 
     return {
         "job_id": job_id,
+        "status": execution_state or queue_state or "unknown",
         "log_path": log_path,
-        "lines": content[-lines:],
+        "lines": stdout.splitlines(),
     }
