@@ -35,10 +35,21 @@ def build_remote_launch_command(
     submit_script = submit_script or settings.TAP_M3_SUBMIT_SCRIPT
     overrides_json = json.dumps(config_overrides or {}, ensure_ascii=False)
 
+#     script = f"""
+# set -e
+# cd {shlex.quote(settings.TAP_M3_REPO_PATH)}
+# git fetch {shlex.quote(settings.TAP_GIT_REMOTE)} --prune
+# git checkout {shlex.quote(git_commit)}
+# export CONFIG_PATH={shlex.quote(config_path)}
+# export CONFIG_OVERRIDES_JSON={shlex.quote(overrides_json)}
+# export TAP_RUN_NAME={shlex.quote(run_name)}
+# sbatch --job-name={shlex.quote(run_name)} {shlex.quote(submit_script)}
+# """.strip()
+    
     script = f"""
 set -e
-cd {shlex.quote(settings.TAP_M3_REPO_PATH)}
-git fetch {shlex.quote(settings.TAP_GIT_REMOTE)} --prune
+cd /home/slo/vf38_scratch2/sloo0021/slm_repo
+git fetch origin --prune
 git checkout {shlex.quote(git_commit)}
 export CONFIG_PATH={shlex.quote(config_path)}
 export CONFIG_OVERRIDES_JSON={shlex.quote(overrides_json)}
