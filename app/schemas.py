@@ -15,6 +15,7 @@ class RunCreate(BaseModel):
     submit_script: str | None = None
     wandb_config_ref: str | None = None
     wandb_run_id: str | None = None
+    launch_now: bool = True
 
 
 class RunResponse(BaseModel):
