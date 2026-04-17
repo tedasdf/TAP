@@ -59,6 +59,7 @@ def init_db() -> None:
                 end_time TEXT,
                 exit_status TEXT,
                 log_path TEXT,
+                error_log_path TEXT,
                 FOREIGN KEY (run_id) REFERENCES runs(run_id) ON DELETE CASCADE
             )
             """

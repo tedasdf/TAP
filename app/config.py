@@ -14,6 +14,7 @@ class Settings:
     TAP_M3_REPO_PATH: str = os.environ.get("TAP_M3_REPO_PATH", "~/slm_repo")
     TAP_GIT_REMOTE: str = os.environ.get("TAP_GIT_REMOTE", "origin")
     TAP_M3_SUBMIT_SCRIPT: str = os.environ.get("TAP_M3_SUBMIT_SCRIPT", "slurm/train.sh")
+    TAP_M3_LOG_DIR: str = os.environ.get("TAP_M3_LOG_DIR", "logs/slurm")
 
     WANDB_ENTITY: str = os.environ.get("WANDB_ENTITY", "")
     WANDB_PROJECT: str = os.environ.get("WANDB_PROJECT", "")

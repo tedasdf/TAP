@@ -13,8 +13,11 @@ from fastapi import APIRouter, HTTPException
 
 from app.db import get_db
 from app.schemas import RunCreate, RunResponse
-from app.services.launcher import parse_slurm_job_id, launch_training_run, run_ssh_command
-
+from app.services.launcher import (
+    launch_training_run,
+    build_remote_log_path,
+    build_remote_error_log_path,
+)
 
 router = APIRouter(tags=["runs"])
 
@@ -53,6 +56,8 @@ def create_run(payload: RunCreate) -> RunResponse:
     status = "created"
     slurm_job_id: str | None = None
     error_message: str | None = None
+    log_path: str | None = None
+    error_log_path = None
 
     if payload.launch_now:
         code, stdout, stderr, slurm_job_id = launch_training_run(
@@ -67,6 +72,8 @@ def create_run(payload: RunCreate) -> RunResponse:
 
         if code == 0 and slurm_job_id:
             status = "queued"
+            log_path = build_remote_log_path(payload.name, slurm_job_id)
+            error_log_path = build_remote_error_log_path(payload.name, slurm_job_id)
         elif code == 0:
             status = "created"
             error_message = "Launch succeeded but no Slurm job ID was parsed"
@@ -119,9 +126,10 @@ def create_run(payload: RunCreate) -> RunResponse:
                     start_time,
                     end_time,
                     exit_status,
-                    log_path
+                    log_path,
+                    error_log_path
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     slurm_job_id,
@@ -132,7 +140,8 @@ def create_run(payload: RunCreate) -> RunResponse:
                     None,
                     None,
                     None,
-                    None,
+                    log_path,
+                    error_log_path,
                 ),
             )
 
@@ -149,7 +158,6 @@ def create_run(payload: RunCreate) -> RunResponse:
         created_at=created_at,
         error_message=error_message,
     )
-
 
 @router.get("/runs")
 def list_runs() -> list[dict[str, Any]]:
