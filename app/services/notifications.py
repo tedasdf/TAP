@@ -19,15 +19,16 @@ def send_discord_message(message: str) -> bool:
     req = urllib.request.Request(
         settings.DISCORD_WEBHOOK_URL,
         data=data,
-        headers={"Content-Type": "application/json"},
+        headers={
+            "Content-Type": "application/json",
+            "User-Agent": "DiscordBot (https://github.com/tedasdf/TAP, 0.1.0)",
+        },
         method="POST",
     )
 
     try:
         with urllib.request.urlopen(req, timeout=10) as response:
             print("Discord status:", response.status)
-            body = response.read().decode("utf-8", errors="replace")
-            print("Discord body:", body)
             return 200 <= response.status < 300
     except urllib.error.HTTPError as e:
         body = e.read().decode("utf-8", errors="replace")
