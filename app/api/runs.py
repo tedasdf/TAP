@@ -17,6 +17,7 @@ from app.services.launcher import (
     launch_training_run,
     build_remote_log_path,
     build_remote_error_log_path,
+    run_ssh_command,
 )
 
 router = APIRouter(tags=["runs"])
