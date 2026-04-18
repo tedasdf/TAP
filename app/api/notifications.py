@@ -4,7 +4,7 @@ from fastapi import APIRouter, HTTPException
 
 from app.db import get_db
 from app.schemas import NotificationCreate
-
+from app.services.notifications import send_discord_message
 
 router = APIRouter(tags=["notifications"])
 
@@ -57,7 +57,6 @@ def list_notifications() -> list[dict[str, Any]]:
 
     return [dict(row) for row in rows]
 
-
 @router.post("/notifications")
 def create_notification(payload: NotificationCreate) -> dict[str, Any]:
     from datetime import datetime, timezone
@@ -102,8 +101,11 @@ def create_notification(payload: NotificationCreate) -> dict[str, Any]:
             (notification_id,),
         ).fetchone()
 
-    return dict(row)
+    discord_ok = send_discord_message(payload.message)
 
+    result = dict(row)
+    result["discord_sent"] = discord_ok
+    return result
 
 @router.post("/notifications/test")
 def create_test_notification() -> dict[str, Any]:

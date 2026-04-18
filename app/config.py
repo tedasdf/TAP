@@ -19,6 +19,7 @@ class Settings:
     WANDB_ENTITY: str = os.environ.get("WANDB_ENTITY", "")
     WANDB_PROJECT: str = os.environ.get("WANDB_PROJECT", "")
     WANDB_API_KEY: str = os.environ.get("WANDB_API_KEY", "")
+    DISCORD_WEBHOOK_URL: str = os.environ.get("DISCORD_WEBHOOK_URL", "")
 
 
 settings = Settings()
