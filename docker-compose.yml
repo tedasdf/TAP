@@ -1,6 +1,8 @@
 services:
-  tap:
-    build: .
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
     container_name: tap-api
     ports:
       - "8000:8000"
