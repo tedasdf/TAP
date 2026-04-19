@@ -125,4 +125,4 @@ def test_test_notification_endpoint(client, monkeypatch):
     data = response.json()
     assert data["event_type"] == "test"
     assert data["message"] == "TAP test notification"
-    assert data["discord_sent"] is True
+    assert data["discord_sent"] is True 

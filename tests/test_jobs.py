@@ -1,4 +1,4 @@
-from app.db import get_db
+from backend.app.db import get_db
 
 
 def create_run(client, *, name="job-test-run", launch_now=False):

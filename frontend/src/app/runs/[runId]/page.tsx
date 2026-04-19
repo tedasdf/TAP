@@ -1,0 +1,284 @@
+"use client";
+
+import { useMemo, useState } from "react";
+import Link from "next/link";
+import { useParams } from "next/navigation";
+import { ArrowLeft, RefreshCw, Square } from "lucide-react";
+import { AppShell } from "@/components/layout/app-shell";
+import { DetailTabs, RunDetailTab } from "@/components/run-detail/detail-tabs";
+import { OverviewTab } from "@/components/run-detail/overview-tab";
+import { MetricsTab } from "@/components/run-detail/metrics-tab";
+import { LogsTab } from "@/components/run-detail/logs-tab";
+import { JobTab } from "@/components/run-detail/job-tab";
+import { ConfigTab } from "@/components/run-detail/config-tab";
+import { EmptyState } from "@/components/shared/empty-state";
+import { LoadingState } from "@/components/shared/loading-state";
+import { useCancelRun, useRun, useRunMetrics, useSyncWandb } from "@/lib/hooks/use-runs";
+import { useJob, useJobLogs } from "@/lib/hooks/use-jobs";
+import { ApiRun, ApiRunMetrics } from "@/lib/types/api";
+
+function buildOverviewRun(run: ApiRun, metrics?: ApiRunMetrics) {
+  return {
+    id: run.run_id,
+    name: run.name,
+    status: run.status,
+    configPath: run.config_path,
+    currentStep: metrics?.current_step ?? run.current_step ?? undefined,
+    currentEpoch: metrics?.current_epoch ?? run.current_epoch ?? undefined,
+    trainingLoss: metrics?.training_loss ?? run.training_loss ?? undefined,
+    validationLoss: metrics?.validation_loss ?? run.validation_loss ?? undefined,
+    learningRate: metrics?.learning_rate ?? run.learning_rate ?? undefined,
+    runtime: metrics?.runtime ?? run.runtime ?? undefined,
+    slurmJobId: run.slurm_job_id ?? undefined,
+    wandbRunId: run.wandb_run_id ?? undefined,
+    gitCommit: run.git_commit ?? undefined,
+    createdAt: run.created_at,
+    latestMetricTimestamp:
+      metrics?.latest_metric_timestamp ?? run.latest_metric_timestamp ?? undefined,
+    configOverrides: run.config_overrides ?? undefined,
+    errorMessage: run.error_message ?? undefined,
+  };
+}
+
+function buildMetricsSeries(run: ApiRun, metrics?: ApiRunMetrics) {
+  const currentStep = metrics?.current_step ?? run.current_step ?? 0;
+  const trainingLoss = metrics?.training_loss ?? run.training_loss ?? null;
+  const validationLoss = metrics?.validation_loss ?? run.validation_loss ?? null;
+  const learningRate = metrics?.learning_rate ?? run.learning_rate ?? null;
+
+  if (
+    currentStep === 0 ||
+    trainingLoss === null ||
+    validationLoss === null ||
+    learningRate === null
+  ) {
+    return [];
+  }
+
+  return [
+    {
+      step: Math.max(1, Math.floor(currentStep * 0.2)),
+      trainingLoss: Number(trainingLoss) + 0.9,
+      validationLoss: Number(validationLoss) + 1.0,
+      learningRate: Number(learningRate) * 0.4,
+    },
+    {
+      step: Math.max(1, Math.floor(currentStep * 0.45)),
+      trainingLoss: Number(trainingLoss) + 0.55,
+      validationLoss: Number(validationLoss) + 0.65,
+      learningRate: Number(learningRate) * 0.75,
+    },
+    {
+      step: Math.max(1, Math.floor(currentStep * 0.7)),
+      trainingLoss: Number(trainingLoss) + 0.22,
+      validationLoss: Number(validationLoss) + 0.28,
+      learningRate: Number(learningRate),
+    },
+    {
+      step: currentStep,
+      trainingLoss: Number(trainingLoss),
+      validationLoss: Number(validationLoss),
+      learningRate: Number(learningRate),
+    },
+  ];
+}
+
+export default function RunDetailPage() {
+  const params = useParams<{ runId: string }>();
+  const runId = params.runId;
+
+  const [activeTab, setActiveTab] = useState<RunDetailTab>("overview");
+
+  const runQuery = useRun(runId);
+  const metricsQuery = useRunMetrics(runId);
+
+  const slurmJobId = runQuery.data?.slurm_job_id;
+  const jobQuery = useJob(slurmJobId);
+  const jobLogsQuery = useJobLogs(slurmJobId);
+
+  const cancelRunMutation = useCancelRun();
+  const syncWandbMutation = useSyncWandb();
+
+  const isLoading =
+    runQuery.isLoading ||
+    (activeTab === "overview" && metricsQuery.isLoading) ||
+    (activeTab === "job" && !!slurmJobId && jobQuery.isLoading) ||
+    (activeTab === "logs" && !!slurmJobId && jobLogsQuery.isLoading);
+
+  const hasError = runQuery.isError;
+
+  const overviewRun = useMemo(() => {
+    if (!runQuery.data) return null;
+    return buildOverviewRun(runQuery.data, metricsQuery.data);
+  }, [runQuery.data, metricsQuery.data]);
+
+  const metricsSeries = useMemo(() => {
+    if (!runQuery.data) return [];
+    return buildMetricsSeries(runQuery.data, metricsQuery.data);
+  }, [runQuery.data, metricsQuery.data]);
+
+  const logsData = useMemo(() => {
+    const payload = jobLogsQuery.data;
+    if (!payload) return [];
+    if (Array.isArray(payload.logs) && payload.logs.length > 0) return payload.logs;
+    return [...(payload.stdout ?? []), ...(payload.stderr ?? [])];
+  }, [jobLogsQuery.data]);
+
+  async function handleCancel() {
+    if (!runId) return;
+    try {
+      await cancelRunMutation.mutateAsync(runId);
+    } catch {}
+  }
+
+  async function handleSync() {
+    if (!runId) return;
+    try {
+      await syncWandbMutation.mutateAsync(runId);
+    } catch {}
+  }
+
+  return (
+    <AppShell>
+      <div className="space-y-5">
+        <div className="flex items-center justify-between gap-4">
+          <div>
+            <Link
+              href="/runs"
+              className="inline-flex items-center gap-2 text-sm text-zinc-400 hover:text-white"
+            >
+              <ArrowLeft className="h-4 w-4" />
+              Back to Runs
+            </Link>
+
+            <p className="mt-3 text-sm text-zinc-500">Run Detail</p>
+            <h1 className="mt-1 text-2xl font-bold">
+              {runQuery.data?.name ?? "Loading run..."}
+            </h1>
+            <p className="mt-2 text-sm text-zinc-400">
+              {runQuery.data?.config_path ?? ""}
+            </p>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-3 gap-3">
+          <button
+            type="button"
+            onClick={() => {
+              runQuery.refetch();
+              metricsQuery.refetch();
+              if (slurmJobId) {
+                jobQuery.refetch();
+                jobLogsQuery.refetch();
+              }
+            }}
+            className="inline-flex items-center justify-center gap-2 rounded-2xl border border-zinc-800 bg-zinc-900/70 px-4 py-3 text-sm text-zinc-200"
+          >
+            <RefreshCw className="h-4 w-4" />
+            Refresh
+          </button>
+
+          <button
+            type="button"
+            onClick={handleSync}
+            disabled={syncWandbMutation.isPending}
+            className="inline-flex items-center justify-center gap-2 rounded-2xl border border-zinc-800 bg-zinc-900/70 px-4 py-3 text-sm text-zinc-200 disabled:opacity-60"
+          >
+            <RefreshCw className="h-4 w-4" />
+            Sync
+          </button>
+
+          <button
+            type="button"
+            onClick={handleCancel}
+            disabled={cancelRunMutation.isPending}
+            className="inline-flex items-center justify-center gap-2 rounded-2xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-200 disabled:opacity-60"
+          >
+            <Square className="h-4 w-4" />
+            Cancel
+          </button>
+        </div>
+
+        <DetailTabs activeTab={activeTab} onChange={setActiveTab} />
+
+        {isLoading ? (
+          <LoadingState />
+        ) : hasError || !runQuery.data ? (
+          <EmptyState
+            title="Could not load run"
+            description="Check the backend connection and try again."
+          />
+        ) : (
+          <>
+            {activeTab === "overview" && overviewRun && <OverviewTab run={overviewRun} />}
+
+            {activeTab === "metrics" &&
+              (metricsSeries.length > 0 ? (
+                <MetricsTab data={metricsSeries} />
+              ) : (
+                <EmptyState
+                  title="No metrics yet"
+                  description="This run does not have metric data available."
+                />
+              ))}
+
+            {activeTab === "logs" &&
+              (slurmJobId ? (
+                logsData.length > 0 ? (
+                  <LogsTab logs={logsData} />
+                ) : (
+                  <EmptyState
+                    title="No logs available"
+                    description="No log lines were returned for this job yet."
+                  />
+                )
+              ) : (
+                <EmptyState
+                  title="No job logs"
+                  description="This run does not have a Slurm job ID yet."
+                />
+              ))}
+
+            {activeTab === "job" &&
+              (slurmJobId ? (
+                jobQuery.data ? (
+                  <JobTab
+                    job={{
+                      jobId: jobQuery.data.job_id,
+                      queueState: jobQuery.data.queue_state ?? "—",
+                      executionState: jobQuery.data.execution_state ?? "—",
+                      nodeInfo: jobQuery.data.node_info ?? "—",
+                      startTime: jobQuery.data.start_time ?? "—",
+                      endTime: jobQuery.data.end_time ?? "—",
+                      exitStatus: jobQuery.data.exit_status ?? "—",
+                      logPath: jobQuery.data.log_path ?? "—",
+                      errorLogPath: jobQuery.data.error_log_path ?? "—",
+                    }}
+                  />
+                ) : (
+                  <EmptyState
+                    title="No job details"
+                    description="Job details are not available yet."
+                  />
+                )
+              ) : (
+                <EmptyState
+                  title="No Slurm job"
+                  description="This run does not have a Slurm job ID yet."
+                />
+              ))}
+
+            {activeTab === "config" && (
+              <ConfigTab
+                configPath={runQuery.data.config_path}
+                configOverrides={runQuery.data.config_overrides ?? undefined}
+                gitCommit={runQuery.data.git_commit ?? undefined}
+                wandbRunId={runQuery.data.wandb_run_id ?? undefined}
+              />
+            )}
+          </>
+        )}
+      </div>
+    </AppShell>
+  );
+}

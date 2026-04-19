@@ -2,6 +2,7 @@ import os
 from pathlib import Path
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 from app.db import init_db
 from app.api.runs import router as runs_router
@@ -13,8 +14,18 @@ from app.api.system import router as system_router
 
 DB_PATH = Path(os.environ.get("TAP_DB_PATH", "tap.db"))
 
-app = FastAPI(title="TAP API", version="0.1.0")
+app = FastAPI()
 
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 @app.on_event("startup")
 def on_startup() -> None:
