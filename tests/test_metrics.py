@@ -110,3 +110,4 @@ def test_sync_wandb(client, monkeypatch):
     run_response = client.get(f"/runs/{run['run_id']}")
     assert run_response.status_code == 200
     assert run_response.json()["status"] == "completed"
+    

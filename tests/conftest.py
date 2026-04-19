@@ -11,8 +11,8 @@ sys.path.insert(0, str(ROOT))
 TEST_DB = ROOT / "data" / "test_tap.db"
 os.environ["TAP_DB_PATH"] = str(TEST_DB)
 
-from app.db import init_db
-from app.main import app
+from backend.app.db import init_db
+from backend.app.main import app
 
 
 @pytest.fixture
