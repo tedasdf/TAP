@@ -13,7 +13,7 @@ import { JobTab } from "@/components/run-detail/job-tab";
 import { ConfigTab } from "@/components/run-detail/config-tab";
 import { EmptyState } from "@/components/shared/empty-state";
 import { LoadingState } from "@/components/shared/loading-state";
-import { useCancelRun, useRun, useRunMetrics, useSyncWandb } from "@/lib/hooks/use-runs";
+import { useCancelRun, useRefreshRun, useRun, useRunMetrics, useSyncWandb } from "@/lib/hooks/use-runs";
 import { useJob, useJobLogs } from "@/lib/hooks/use-jobs";
 import { ApiRun, ApiRunMetrics } from "@/lib/types/api";
 
@@ -97,6 +97,7 @@ export default function RunDetailPage() {
   const jobLogsQuery = useJobLogs(slurmJobId);
 
   const cancelRunMutation = useCancelRun();
+  const refreshRunMutation = useRefreshRun();
   const syncWandbMutation = useSyncWandb();
 
   const isLoading =
@@ -121,6 +122,7 @@ export default function RunDetailPage() {
     const payload = jobLogsQuery.data;
     if (!payload) return [];
     if (Array.isArray(payload.logs) && payload.logs.length > 0) return payload.logs;
+    if (Array.isArray(payload.lines) && payload.lines.length > 0) return payload.lines;
     return [...(payload.stdout ?? []), ...(payload.stderr ?? [])];
   }, [jobLogsQuery.data]);
 
@@ -128,6 +130,19 @@ export default function RunDetailPage() {
     if (!runId) return;
     try {
       await cancelRunMutation.mutateAsync(runId);
+    } catch {}
+  }
+
+  async function handleRefresh() {
+    if (!runId) return;
+    try {
+      await refreshRunMutation.mutateAsync(runId);
+      await Promise.all([
+        runQuery.refetch(),
+        metricsQuery.refetch(),
+        slurmJobId ? jobQuery.refetch() : Promise.resolve(),
+        slurmJobId ? jobLogsQuery.refetch() : Promise.resolve(),
+      ]);
     } catch {}
   }
 
@@ -164,18 +179,12 @@ export default function RunDetailPage() {
         <div className="grid grid-cols-3 gap-3">
           <button
             type="button"
-            onClick={() => {
-              runQuery.refetch();
-              metricsQuery.refetch();
-              if (slurmJobId) {
-                jobQuery.refetch();
-                jobLogsQuery.refetch();
-              }
-            }}
-            className="inline-flex items-center justify-center gap-2 rounded-2xl border border-zinc-800 bg-zinc-900/70 px-4 py-3 text-sm text-zinc-200"
+            onClick={handleRefresh}
+            disabled={refreshRunMutation.isPending}
+            className="inline-flex items-center justify-center gap-2 rounded-2xl border border-zinc-800 bg-zinc-900/70 px-4 py-3 text-sm text-zinc-200 disabled:opacity-60"
           >
             <RefreshCw className="h-4 w-4" />
-            Refresh
+            {refreshRunMutation.isPending ? "Refreshing..." : "Refresh"}
           </button>
 
           <button

@@ -15,6 +15,7 @@ export type ApiJob = {
 
 export type ApiJobLogs = {
   logs?: string[];
+  lines?: string[];
   stdout?: string[];
   stderr?: string[];
 };

@@ -1,7 +1,7 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { cancelRun, createRun, getRun, getRunMetrics, getRuns, syncWandb } from "@/lib/api/runs";
+import { cancelRun, createRun, getRun, getRunMetrics, getRuns, refreshRun, syncWandb } from "@/lib/api/runs";
 import { CreateRunPayload } from "@/lib/types/api";
 
 export function useRuns() {
@@ -27,6 +27,20 @@ export function useRunMetrics(runId: string) {
     queryFn: () => getRunMetrics(runId),
     enabled: !!runId,
     refetchInterval: 15000,
+  });
+}
+
+export function useRefreshRun() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (runId: string) => refreshRun(runId),
+    onSuccess: (_data, runId) => {
+      queryClient.invalidateQueries({ queryKey: ["runs"] });
+      queryClient.invalidateQueries({ queryKey: ["runs", runId] });
+      queryClient.invalidateQueries({ queryKey: ["runs", runId, "metrics"] });
+      queryClient.invalidateQueries({ queryKey: ["jobs"] });
+    },
   });
 }
 

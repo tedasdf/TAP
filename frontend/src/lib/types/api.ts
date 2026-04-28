@@ -1,10 +1,10 @@
 export type ApiRun = {
   run_id: string;
   name: string;
-  status: "running" | "queued" | "failed" | "completed" | "cancelled";
+  status: "created" | "running" | "queued" | "failed" | "completed" | "cancelled" | "unknown";
   git_commit?: string | null;
   config_path: string;
-  config_overrides?: string | null;
+  config_overrides?: Record<string, unknown> | null;
   wandb_config_ref?: string | null;
   slurm_job_id?: string | null;
   wandb_run_id?: string | null;
@@ -16,7 +16,7 @@ export type ApiRun = {
   current_epoch?: number | null;
   training_loss?: number | null;
   validation_loss?: number | null;
-  runtime?: string | null;
+  runtime?: number | string | null;
   learning_rate?: number | null;
   latest_metric_timestamp?: string | null;
 };
@@ -32,6 +32,16 @@ export type ApiNotification = {
 };
 
 export type ApiSystemStatus = {
+  service?: string;
+  status?: string;
+  checks?: {
+    database?: string;
+    ssh?: string;
+    wandb?: string;
+  };
+  run_count?: number;
+  active_run_count?: number;
+  notification_count?: number;
   backend?: string;
   m3?: string;
   slurm?: string;
@@ -46,14 +56,17 @@ export type ApiRunMetrics = {
   current_epoch?: number | null;
   training_loss?: number | null;
   validation_loss?: number | null;
-  runtime?: string | null;
+  runtime?: number | string | null;
   learning_rate?: number | null;
   latest_metric_timestamp?: string | null;
 };
 
 export type CreateRunPayload = {
   name: string;
+  git_commit: string;
   config_path: string;
-  config_overrides?: string;
+  config_overrides?: Record<string, string>;
   wandb_config_ref?: string;
+  wandb_run_id?: string;
+  launch_now?: boolean;
 };

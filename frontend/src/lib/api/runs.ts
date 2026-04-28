@@ -13,6 +13,12 @@ export function getRunMetrics(runId: string) {
   return apiRequest<ApiRunMetrics>(`/runs/${runId}/metrics`);
 }
 
+export function refreshRun(runId: string) {
+  return apiRequest(`/runs/${runId}/refresh`, {
+    method: "POST",
+  });
+}
+
 export function syncWandb(runId: string) {
   return apiRequest(`/runs/${runId}/sync-wandb`, {
     method: "POST",

@@ -4,43 +4,131 @@ from typing import Any
 from app.services.launcher import run_ssh_command
 
 
+_SUCCESS_EXIT_CODES = {"", "0", "0:0", "completed", "complete", "success"}
+_CANCEL_STATES = {"cancelled", "canceled", "ca"}
+_QUEUED_STATES = {"pending", "queued", "pd", "configuring", "cf"}
+_RUNNING_STATES = {"running", "r", "completing", "cg"}
+_COMPLETED_STATES = {"completed", "complete", "cd"}
+_FAILED_STATES = {
+    "failed",
+    "fail",
+    "f",
+    "timeout",
+    "to",
+    "node_fail",
+    "nf",
+    "out_of_memory",
+    "oom",
+    "preempted",
+    "boot_fail",
+    "deadline",
+}
+
+
+def _normalise(value: str | None) -> str:
+    return (value or "").strip().lower()
+
+
+def _state_tokens(*values: str | None) -> set[str]:
+    tokens: set[str] = set()
+    for value in values:
+        text = _normalise(value)
+        if not text:
+            continue
+        # Slurm can return states like COMPLETED, COMPLETED+, CANCELLED by 123,
+        # or OUT_OF_MEMORY. Keep both the full value and the first word/code.
+        tokens.add(text)
+        tokens.add(text.split()[0])
+        tokens.add(text.split("+")[0])
+    return tokens
+
+
+def _exit_code_is_success(exit_status: str | None) -> bool:
+    status = _normalise(exit_status)
+    if status in _SUCCESS_EXIT_CODES:
+        return True
+
+    # Slurm commonly reports ExitCode as "0:0" for success.
+    if ":" in status:
+        return status.split(":", 1)[0] == "0"
+
+    return False
+
+
 def derive_run_status(
     current_status: str,
     queue_state: str | None,
     execution_state: str | None,
     exit_status: str | None,
 ) -> str:
-    queue_state = (queue_state or "").lower()
-    execution_state = (execution_state or "").lower()
-    exit_status = (exit_status or "").lower()
+    """Map raw Slurm-ish state into TAP's run status.
+
+    Order matters: a COMPLETED job with ExitCode 0:0 must be completed, not
+    failed. The old implementation treated 0:0 as failure because it only
+    accepted "0".
+    """
+    current_status = _normalise(current_status)
+    states = _state_tokens(queue_state, execution_state)
 
     if current_status == "cancelled":
         return "cancelled"
 
-    if "cancel" in queue_state or "cancel" in execution_state:
+    if states & _CANCEL_STATES or any("cancel" in state for state in states):
         return "cancelled"
 
-    if (
-        "fail" in queue_state
-        or "fail" in execution_state
-        or "timeout" in queue_state
-        or "timeout" in execution_state
-        or "node_fail" in queue_state
-        or "node_fail" in execution_state
-        or exit_status not in {"", "0", "completed", "success"}
+    if states & _COMPLETED_STATES or any("complete" in state for state in states):
+        return "completed" if _exit_code_is_success(exit_status) else "failed"
+
+    if states & _FAILED_STATES or any(
+        marker in state
+        for state in states
+        for marker in ("fail", "timeout", "out_of_memory", "oom")
     ):
         return "failed"
 
-    if "complete" in queue_state or "complete" in execution_state:
-        return "completed"
+    if exit_status and not _exit_code_is_success(exit_status):
+        return "failed"
 
-    if queue_state == "running" or execution_state == "running":
+    if states & _RUNNING_STATES:
         return "running"
 
-    if queue_state in {"pending", "queued"} or execution_state in {"pending", "queued"}:
+    if states & _QUEUED_STATES:
         return "queued"
 
-    return current_status
+    return current_status or "unknown"
+
+
+def reconcile_run_status(
+    *,
+    current_status: str,
+    slurm_status: str | None = None,
+    wandb_status: str | None = None,
+) -> str:
+    """Combine local, Slurm, and W&B status into one TAP status.
+
+    Slurm infrastructure failures should win. W&B can upgrade a stale queued DB
+    status to running/completed when training is clearly progressing.
+    """
+    current = _normalise(current_status)
+    slurm = _normalise(slurm_status)
+    wandb = _normalise(wandb_status)
+
+    if current == "cancelled" or slurm == "cancelled" or wandb == "cancelled":
+        return "cancelled"
+
+    if slurm == "failed" or wandb == "failed":
+        return "failed"
+
+    if slurm == "completed" or wandb == "completed":
+        return "completed"
+
+    if slurm == "running" or wandb == "running":
+        return "running"
+
+    if slurm == "queued":
+        return "queued"
+
+    return current or wandb or slurm or "unknown"
 
 
 def refresh_job_from_slurm(job_id: str) -> dict[str, Any]:

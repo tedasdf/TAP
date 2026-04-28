@@ -11,7 +11,7 @@ from typing import Any
 
 from fastapi import HTTPException, APIRouter
 from app.db import get_db
-from app.services.jobs import refresh_job_from_slurm, derive_run_status
+from app.services.jobs import refresh_job_from_slurm, derive_run_status, reconcile_run_status
 from app.services.wandb_client import get_run_snapshot
 from app.schemas import RunCreate, RunResponse
 from app.services.launcher import (
@@ -196,7 +196,9 @@ def refresh_run(run_id: str) -> dict[str, Any]:
 
     job_snapshot = None
     metrics_snapshot = None
-    new_status = run_row["status"]
+    wandb_snapshot = None
+    slurm_status = None
+    wandb_status = None
 
     with get_db() as conn:
         if slurm_job_id:
@@ -225,23 +227,45 @@ def refresh_run(run_id: str) -> dict[str, Any]:
                         slurm_job_id,
                     ),
                 )
+            else:
+                conn.execute(
+                    """
+                    INSERT INTO jobs (
+                        job_id,
+                        run_id,
+                        queue_state,
+                        execution_state,
+                        node_info,
+                        start_time,
+                        end_time,
+                        exit_status
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        slurm_job_id,
+                        run_id,
+                        job_snapshot["queue_state"],
+                        job_snapshot["execution_state"],
+                        job_snapshot["node_info"],
+                        job_snapshot["start_time"],
+                        job_snapshot["end_time"],
+                        job_snapshot["exit_status"],
+                    ),
+                )
 
-            new_status = derive_run_status(
+            slurm_status = derive_run_status(
                 current_status=run_row["status"],
                 queue_state=job_snapshot["queue_state"],
                 execution_state=job_snapshot["execution_state"],
                 exit_status=job_snapshot["exit_status"],
             )
 
-            conn.execute(
-                "UPDATE runs SET status = ? WHERE run_id = ?",
-                (new_status, run_id),
-            )
-
         if wandb_run_id:
             try:
-                snapshot = get_run_snapshot(wandb_run_id)
-                metrics = snapshot["metrics"]
+                wandb_snapshot = get_run_snapshot(wandb_run_id)
+                wandb_status = wandb_snapshot.get("tap_status")
+                metrics = wandb_snapshot["metrics"]
 
                 conn.execute(
                     """
@@ -282,8 +306,20 @@ def refresh_run(run_id: str) -> dict[str, Any]:
                 ).fetchone()
                 metrics_snapshot = dict(metrics_row) if metrics_row else None
 
-            except Exception:
+            except Exception as exc:
+                wandb_snapshot = {"error": str(exc)}
                 metrics_snapshot = None
+
+        new_status = reconcile_run_status(
+            current_status=run_row["status"],
+            slurm_status=slurm_status,
+            wandb_status=wandb_status,
+        )
+
+        conn.execute(
+            "UPDATE runs SET status = ? WHERE run_id = ?",
+            (new_status, run_id),
+        )
 
         updated_run = conn.execute(
             "SELECT * FROM runs WHERE run_id = ?",
@@ -298,10 +334,19 @@ def refresh_run(run_id: str) -> dict[str, Any]:
             ).fetchone()
             updated_job = dict(job_row) if job_row else None
 
+    run_dict = dict(updated_run)
+    run_dict["config_overrides"] = json_loads(run_dict.get("config_overrides"))
+
     return {
-        "run": dict(updated_run),
+        "run": run_dict,
         "job": updated_job,
         "metrics": metrics_snapshot,
+        "sync": {
+            "slurm_status": slurm_status,
+            "wandb_status": wandb_status,
+            "wandb_state": (wandb_snapshot or {}).get("wandb_state") if isinstance(wandb_snapshot, dict) else None,
+            "wandb_error": (wandb_snapshot or {}).get("error") if isinstance(wandb_snapshot, dict) else None,
+        },
     }
 
 @router.post("/runs/{run_id}/cancel")
