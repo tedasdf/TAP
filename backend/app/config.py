@@ -20,6 +20,7 @@ class Settings:
     WANDB_PROJECT: str = os.environ.get("WANDB_PROJECT", "")
     WANDB_API_KEY: str = os.environ.get("WANDB_API_KEY", "")
     DISCORD_WEBHOOK_URL: str = os.environ.get("DISCORD_WEBHOOK_URL", "")
-
+    WANDB_HEALTHCHECK_RUN_ID: str = os.environ.get("WANDB_HEALTHCHECK_RUN_ID", "")
+    
 
 settings = Settings()

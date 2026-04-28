@@ -9,9 +9,10 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any
 
-from fastapi import APIRouter, HTTPException
-
+from fastapi import HTTPException, APIRouter
 from app.db import get_db
+from app.services.jobs import refresh_job_from_slurm, derive_run_status
+from app.services.wandb_client import get_run_snapshot
 from app.schemas import RunCreate, RunResponse
 from app.services.launcher import (
     launch_training_run,
@@ -185,6 +186,123 @@ def get_run(run_id: str) -> dict[str, Any]:
     item = ensure_run_exists(run_id)
     item["config_overrides"] = json_loads(item.get("config_overrides"))
     return item
+
+@router.post("/runs/{run_id}/refresh")
+def refresh_run(run_id: str) -> dict[str, Any]:
+    run_row = ensure_run_exists(run_id)
+
+    slurm_job_id = run_row.get("slurm_job_id")
+    wandb_run_id = run_row.get("wandb_run_id")
+
+    job_snapshot = None
+    metrics_snapshot = None
+    new_status = run_row["status"]
+
+    with get_db() as conn:
+        if slurm_job_id:
+            job_snapshot = refresh_job_from_slurm(slurm_job_id)
+
+            existing_job = conn.execute(
+                "SELECT * FROM jobs WHERE job_id = ?",
+                (slurm_job_id,),
+            ).fetchone()
+
+            if existing_job:
+                conn.execute(
+                    """
+                    UPDATE jobs
+                    SET queue_state = ?, execution_state = ?, node_info = ?,
+                        start_time = ?, end_time = ?, exit_status = ?
+                    WHERE job_id = ?
+                    """,
+                    (
+                        job_snapshot["queue_state"],
+                        job_snapshot["execution_state"],
+                        job_snapshot["node_info"],
+                        job_snapshot["start_time"],
+                        job_snapshot["end_time"],
+                        job_snapshot["exit_status"],
+                        slurm_job_id,
+                    ),
+                )
+
+            new_status = derive_run_status(
+                current_status=run_row["status"],
+                queue_state=job_snapshot["queue_state"],
+                execution_state=job_snapshot["execution_state"],
+                exit_status=job_snapshot["exit_status"],
+            )
+
+            conn.execute(
+                "UPDATE runs SET status = ? WHERE run_id = ?",
+                (new_status, run_id),
+            )
+
+        if wandb_run_id:
+            try:
+                snapshot = get_run_snapshot(wandb_run_id)
+                metrics = snapshot["metrics"]
+
+                conn.execute(
+                    """
+                    INSERT INTO metrics (
+                        run_id,
+                        current_step,
+                        current_epoch,
+                        training_loss,
+                        validation_loss,
+                        runtime,
+                        learning_rate,
+                        latest_metric_timestamp
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                    ON CONFLICT(run_id) DO UPDATE SET
+                        current_step = excluded.current_step,
+                        current_epoch = excluded.current_epoch,
+                        training_loss = excluded.training_loss,
+                        validation_loss = excluded.validation_loss,
+                        runtime = excluded.runtime,
+                        learning_rate = excluded.learning_rate,
+                        latest_metric_timestamp = CURRENT_TIMESTAMP
+                    """,
+                    (
+                        run_id,
+                        metrics["current_step"],
+                        metrics["current_epoch"],
+                        metrics["training_loss"],
+                        metrics["validation_loss"],
+                        metrics["runtime"],
+                        metrics["learning_rate"],
+                    ),
+                )
+
+                metrics_row = conn.execute(
+                    "SELECT * FROM metrics WHERE run_id = ?",
+                    (run_id,),
+                ).fetchone()
+                metrics_snapshot = dict(metrics_row) if metrics_row else None
+
+            except Exception:
+                metrics_snapshot = None
+
+        updated_run = conn.execute(
+            "SELECT * FROM runs WHERE run_id = ?",
+            (run_id,),
+        ).fetchone()
+
+        updated_job = None
+        if slurm_job_id:
+            job_row = conn.execute(
+                "SELECT * FROM jobs WHERE job_id = ?",
+                (slurm_job_id,),
+            ).fetchone()
+            updated_job = dict(job_row) if job_row else None
+
+    return {
+        "run": dict(updated_run),
+        "job": updated_job,
+        "metrics": metrics_snapshot,
+    }
 
 @router.post("/runs/{run_id}/cancel")
 def cancel_run(run_id: str) -> dict[str, str]:
