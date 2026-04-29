@@ -19,6 +19,7 @@ from app.services.launcher import (
     build_remote_log_path,
     build_remote_error_log_path,
     run_ssh_command,
+    get_remote_git_state,
 )
 
 router = APIRouter(tags=["runs"])
@@ -55,16 +56,25 @@ def create_run(payload: RunCreate) -> RunResponse:
     run_id = str(uuid.uuid4())
     created_at = utc_now_iso()
 
+    try:
+        git_state = get_remote_git_state()
+        git_commit = payload.git_commit or git_state["commit"]
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Could not read slm_repo git state: {exc}",
+        )
+
     status = "created"
     slurm_job_id: str | None = None
     error_message: str | None = None
     log_path: str | None = None
-    error_log_path = None
+    error_log_path: str | None = None
 
     if payload.launch_now:
         code, stdout, stderr, slurm_job_id = launch_training_run(
             run_name=payload.name,
-            git_commit=payload.git_commit,
+            git_commit=git_commit,
             config_path=payload.config_path,
             config_overrides=payload.config_overrides,
             submit_script=payload.submit_script,
@@ -105,7 +115,7 @@ def create_run(payload: RunCreate) -> RunResponse:
                 run_id,
                 payload.name,
                 status,
-                payload.git_commit,
+                git_commit,
                 payload.config_path,
                 json_dumps(payload.config_overrides),
                 payload.wandb_config_ref,
@@ -151,7 +161,7 @@ def create_run(payload: RunCreate) -> RunResponse:
         run_id=run_id,
         name=payload.name,
         status=status,
-        git_commit=payload.git_commit,
+        git_commit=git_commit,
         config_path=payload.config_path,
         config_overrides=payload.config_overrides,
         wandb_config_ref=payload.wandb_config_ref,

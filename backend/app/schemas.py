@@ -9,7 +9,7 @@ def utc_now_iso() -> str:
 
 class RunCreate(BaseModel):
     name: str
-    git_commit: str
+    git_commit: str | None = None
     config_path: str
     config_overrides: dict[str, Any] = Field(default_factory=dict)
     submit_script: str | None = None
