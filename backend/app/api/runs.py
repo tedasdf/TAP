@@ -200,6 +200,7 @@ def get_run(run_id: str) -> dict[str, Any]:
 @router.post("/runs/{run_id}/refresh")
 def refresh_run(run_id: str) -> dict[str, Any]:
     run_row = ensure_run_exists(run_id)
+    checked_at = utc_now_iso()
 
     slurm_job_id = run_row.get("slurm_job_id")
     wandb_run_id = run_row.get("wandb_run_id")
@@ -327,8 +328,13 @@ def refresh_run(run_id: str) -> dict[str, Any]:
         )
 
         conn.execute(
-            "UPDATE runs SET status = ? WHERE run_id = ?",
-            (new_status, run_id),
+            """
+            UPDATE runs
+            SET status = ?,
+                last_checked_at = ?
+            WHERE run_id = ?
+            """,
+            (new_status, checked_at, run_id),
         )
 
         updated_run = conn.execute(
@@ -352,6 +358,7 @@ def refresh_run(run_id: str) -> dict[str, Any]:
         "job": updated_job,
         "metrics": metrics_snapshot,
         "sync": {
+            "checked_at": checked_at,
             "slurm_status": slurm_status,
             "wandb_status": wandb_status,
             "wandb_state": (wandb_snapshot or {}).get("wandb_state") if isinstance(wandb_snapshot, dict) else None,
