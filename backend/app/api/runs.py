@@ -51,6 +51,42 @@ def ensure_run_exists(run_id: str) -> dict[str, Any]:
 
     return dict(row)
 
+def create_run_event(
+    conn,
+    *,
+    run_id: str,
+    event_type: str,
+    message: str,
+    old_status: str | None = None,
+    new_status: str | None = None,
+    payload: dict[str, Any] | None = None,
+) -> None:
+    conn.execute(
+        """
+        INSERT INTO run_events (
+            event_id,
+            run_id,
+            event_type,
+            message,
+            old_status,
+            new_status,
+            created_at,
+            payload_json
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            str(uuid.uuid4()),
+            run_id,
+            event_type,
+            message,
+            old_status,
+            new_status,
+            utc_now_iso(),
+            json_dumps(payload),
+        ),
+    )
+
 @router.post("/runs", response_model=RunResponse)
 def create_run(payload: RunCreate) -> RunResponse:
     run_id = str(uuid.uuid4())
@@ -125,8 +161,33 @@ def create_run(payload: RunCreate) -> RunResponse:
                 error_message,
             ),
         )
+        create_run_event(
+            conn,
+            run_id=run_id,
+            event_type="RUN_CREATED",
+            message="Run created from slm_repo",
+            new_status=status,
+            payload={
+                "name": payload.name,
+                "config_path": payload.config_path,
+                "git_commit": git_commit,
+                "launch_now": payload.launch_now,
+            },
+        )
 
         if slurm_job_id:
+            create_run_event(
+                conn,
+                run_id=run_id,
+                event_type="SLURM_JOB_SUBMITTED",
+                message=f"Slurm job {slurm_job_id} submitted",
+                new_status=status,
+                payload={
+                    "slurm_job_id": slurm_job_id,
+                    "log_path": log_path,
+                    "error_log_path": error_log_path,
+                },
+            )
             conn.execute(
                 """
                 INSERT INTO jobs (
@@ -170,6 +231,30 @@ def create_run(payload: RunCreate) -> RunResponse:
         created_at=created_at,
         error_message=error_message,
     )
+
+
+@router.get("/runs/{run_id}/events")
+def list_run_events(run_id: str) -> list[dict[str, Any]]:
+    ensure_run_exists(run_id)
+
+    with get_db() as conn:
+        rows = conn.execute(
+            """
+            SELECT *
+            FROM run_events
+            WHERE run_id = ?
+            ORDER BY datetime(created_at) ASC
+            """,
+            (run_id,),
+        ).fetchall()
+
+    events = []
+    for row in rows:
+        item = dict(row)
+        item["payload"] = json_loads(item.get("payload_json"))
+        events.append(item)
+
+    return events
 
 @router.get("/runs")
 def list_runs() -> list[dict[str, Any]]:
@@ -321,11 +406,42 @@ def refresh_run(run_id: str) -> dict[str, Any]:
                 wandb_snapshot = {"error": str(exc)}
                 metrics_snapshot = None
 
+                create_run_event(
+                    conn,
+                    run_id=run_id,
+                    event_type="WANDB_SYNC_FAILED",
+                    message=f"W&B sync failed: {exc}",
+                    old_status=run_row["status"],
+                    new_status=None,
+                    payload={
+                        "wandb_run_id": wandb_run_id,
+                        "error": str(exc),
+                    },
+                )
+
         new_status = reconcile_run_status(
             current_status=run_row["status"],
             slurm_status=slurm_status,
             wandb_status=wandb_status,
         )
+
+        old_status = run_row["status"]
+
+        if new_status != old_status:
+            create_run_event(
+                conn,
+                run_id=run_id,
+                event_type="STATUS_CHANGED",
+                message=f"Run status changed from {old_status} to {new_status}",
+                old_status=old_status,
+                new_status=new_status,
+                payload={
+                    "slurm_status": slurm_status,
+                    "wandb_status": wandb_status,
+                    "slurm_job_id": slurm_job_id,
+                    "wandb_run_id": wandb_run_id,
+                },
+            )
 
         conn.execute(
             """
@@ -396,6 +512,20 @@ def cancel_run(run_id: str) -> dict[str, str]:
             WHERE job_id = ?
             """,
             ("cancelled", "cancelled", slurm_job_id),
+        )
+
+        create_run_event(
+            conn,
+            run_id=run_id,
+            event_type="RUN_CANCELLED",
+            message=f"Run cancelled from TAP. Slurm job {slurm_job_id} was cancelled.",
+            old_status=run_row["status"],
+            new_status="cancelled",
+            payload={
+                "slurm_job_id": slurm_job_id,
+                "stdout": stdout,
+                "stderr": stderr,
+            },
         )
 
     return {"run_id": run_id, "status": "cancelled"}

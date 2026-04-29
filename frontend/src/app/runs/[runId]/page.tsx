@@ -13,7 +13,7 @@ import { JobTab } from "@/components/run-detail/job-tab";
 import { ConfigTab } from "@/components/run-detail/config-tab";
 import { EmptyState } from "@/components/shared/empty-state";
 import { LoadingState } from "@/components/shared/loading-state";
-import { useCancelRun, useRefreshRun, useRun, useRunMetrics, useSyncWandb } from "@/lib/hooks/use-runs";
+import { useCancelRun, useRefreshRun, useRun, useRunEvents, useRunMetrics, useSyncWandb } from "@/lib/hooks/use-runs";
 import { useJob, useJobLogs } from "@/lib/hooks/use-jobs";
 import { ApiRun, ApiRunMetrics } from "@/lib/types/api";
 
@@ -91,6 +91,8 @@ export default function RunDetailPage() {
 
   const runQuery = useRun(runId);
   const metricsQuery = useRunMetrics(runId);
+  const eventsQuery = useRunEvents(runId);
+  const events = eventsQuery.data ?? [];
 
   const slurmJobId = runQuery.data?.slurm_job_id;
   const jobQuery = useJob(slurmJobId);
@@ -130,6 +132,11 @@ export default function RunDetailPage() {
     if (!runId) return;
     try {
       await cancelRunMutation.mutateAsync(runId);
+      await Promise.all([
+        runQuery.refetch(),
+        eventsQuery.refetch(),
+        slurmJobId ? jobQuery.refetch() : Promise.resolve(),
+      ]);
     } catch {}
   }
 
@@ -138,11 +145,12 @@ export default function RunDetailPage() {
     try {
       await refreshRunMutation.mutateAsync(runId);
       await Promise.all([
-        runQuery.refetch(),
-        metricsQuery.refetch(),
-        slurmJobId ? jobQuery.refetch() : Promise.resolve(),
-        slurmJobId ? jobLogsQuery.refetch() : Promise.resolve(),
-      ]);
+      runQuery.refetch(),
+      metricsQuery.refetch(),
+      eventsQuery.refetch(),
+      slurmJobId ? jobQuery.refetch() : Promise.resolve(),
+      slurmJobId ? jobLogsQuery.refetch() : Promise.resolve(),
+    ]);
     } catch {}
   }
 
@@ -208,6 +216,44 @@ export default function RunDetailPage() {
           </button>
         </div>
 
+        <section className="rounded-2xl border border-zinc-800 bg-zinc-950/40 p-4">
+          <div className="mb-3">
+            <h2 className="text-lg font-semibold">Timeline</h2>
+            <p className="text-sm text-zinc-400">
+              Run lifecycle events recorded by TAP.
+            </p>
+          </div>
+
+          {events.length === 0 ? (
+            <p className="text-sm text-zinc-400">
+              No events recorded yet.
+            </p>
+          ) : (
+            <div className="space-y-3">
+              {events.map((event) => (
+                <div key={event.event_id} className="rounded-lg border p-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="font-medium">{event.event_type}</div>
+                    <div className="text-xs text-zinc-400">
+                      {new Date(event.created_at).toLocaleString()}
+                    </div>
+                  </div>
+
+                  <div className="mt-1 text-sm text-zinc-400">
+                    {event.message}
+                  </div>
+
+                  {event.old_status || event.new_status ? (
+                    <div className="mt-2 text-xs text-zinc-400">
+                      {event.old_status ?? "none"} → {event.new_status ?? "none"}
+                    </div>
+                  ) : null}
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+
         <DetailTabs activeTab={activeTab} onChange={setActiveTab} />
 
         {isLoading ? (
@@ -246,7 +292,7 @@ export default function RunDetailPage() {
                   title="No job logs"
                   description="This run does not have a Slurm job ID yet."
                 />
-              ))}
+            ))}
 
             {activeTab === "job" &&
               (slurmJobId ? (

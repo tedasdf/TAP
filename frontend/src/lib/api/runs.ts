@@ -37,3 +37,18 @@ export function createRun(payload: CreateRunPayload) {
     body: JSON.stringify(payload),
   });
 }
+
+export type RunEvent = {
+  event_id: string;
+  run_id: string;
+  event_type: string;
+  message: string;
+  old_status?: string | null;
+  new_status?: string | null;
+  created_at: string;
+  payload?: Record<string, unknown>;
+};
+
+export async function getRunEvents(runId: string): Promise<RunEvent[]> {
+  return apiRequest<RunEvent[]>(`/runs/${runId}/events`);
+}

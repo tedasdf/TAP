@@ -68,6 +68,22 @@ def init_db() -> None:
 
         conn.execute(
             """
+            CREATE TABLE IF NOT EXISTS run_events (
+                event_id TEXT PRIMARY KEY,
+                run_id TEXT NOT NULL,
+                event_type TEXT NOT NULL,
+                message TEXT NOT NULL,
+                old_status TEXT,
+                new_status TEXT,
+                created_at TEXT NOT NULL,
+                payload_json TEXT,
+                FOREIGN KEY (run_id) REFERENCES runs(run_id) ON DELETE CASCADE
+            )
+            """
+        )
+
+        conn.execute(
+            """
             CREATE TABLE IF NOT EXISTS metrics (
                 run_id TEXT PRIMARY KEY,
                 current_step INTEGER,
