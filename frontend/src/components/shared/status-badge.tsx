@@ -6,6 +6,7 @@ type StatusBadgeProps = {
 };
 
 const statusStyles: Record<string, string> = {
+  created: "bg-zinc-500/15 text-zinc-300 border-zinc-500/30",
   running: "bg-emerald-500/15 text-emerald-300 border-emerald-500/30",
   queued: "bg-amber-500/15 text-amber-300 border-amber-500/30",
   failed: "bg-red-500/15 text-red-300 border-red-500/30",
