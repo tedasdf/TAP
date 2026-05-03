@@ -1,5 +1,5 @@
 import { apiRequest } from "@/lib/api/client";
-import { ApiRun, ApiRunMetrics, CreateRunPayload } from "@/lib/types/api";
+import { ApiRun, ApiRunMetrics, ApiRunRefreshResponse, CreateRunPayload } from "@/lib/types/api";
 
 export function getRuns() {
   return apiRequest<ApiRun[]>("/runs");
@@ -29,5 +29,11 @@ export function createRun(payload: CreateRunPayload) {
   return apiRequest<ApiRun>("/runs", {
     method: "POST",
     body: JSON.stringify(payload),
+  });
+}
+
+export async function refreshRun(runId: string): Promise<ApiRunRefreshResponse> {
+  return apiRequest<ApiRunRefreshResponse>(`/runs/${runId}/refresh`, {
+    method: "POST",
   });
 }
