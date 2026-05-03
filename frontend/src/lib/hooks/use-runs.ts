@@ -3,6 +3,8 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { cancelRun, createRun, getRun, getRunMetrics, getRuns, syncWandb } from "@/lib/api/runs";
 import { CreateRunPayload } from "@/lib/types/api";
+import { refreshRun } from "@/lib/api/runs";
+
 
 export function useRuns() {
   return useQuery({
@@ -60,5 +62,12 @@ export function useCreateRun() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["runs"] });
     },
+  });
+}
+
+
+export function useRefreshRun() {
+  return useMutation({
+    mutationFn: refreshRun,
   });
 }
