@@ -17,9 +17,12 @@ import {
   AlertView,
   AttentionItem,
   RunCardView,
+  RunStatus,
   StatusStripView,
   SummaryCounts,
 } from "@/lib/types/view";
+
+
 
 function mapSystemStatusToView(status?: ApiSystemStatus): StatusStripView {
   const normalize = (
@@ -132,8 +135,10 @@ export default function HomePage() {
   const summaryCounts = getSummaryCounts(runs);
   const attentionItems = getAttentionItems(runs);
 
+  const activeStatuses: RunStatus[] = ["created", "queued", "running", "unknown"];
+
   const currentRuns: RunCardView[] = runs
-    .filter((run) => run.status === "running" || run.status === "queued")
+    .filter((run) => activeStatuses.includes(run.status))
     .slice(0, 4)
     .map(mapRunToCardView);
 
