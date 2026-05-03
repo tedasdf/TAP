@@ -9,13 +9,13 @@ def utc_now_iso() -> str:
 
 class RunCreate(BaseModel):
     name: str
-    git_commit: str
+    git_commit: str | None = None
     config_path: str
-    config_overrides: dict[str, Any] = Field(default_factory=dict)
+    config_overrides: dict[str, Any] | None = None
     submit_script: str | None = None
     wandb_config_ref: str | None = None
     wandb_run_id: str | None = None
-    launch_now: bool = True
+    launch_now: bool = False
 
 
 class RunResponse(BaseModel):

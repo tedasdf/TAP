@@ -58,12 +58,14 @@ def create_run(payload: RunCreate) -> RunResponse:
     slurm_job_id: str | None = None
     error_message: str | None = None
     log_path: str | None = None
-    error_log_path = None
+    error_log_path: str | None = None
+
+    git_commit = payload.git_commit or "unknown"
 
     if payload.launch_now:
         code, stdout, stderr, slurm_job_id = launch_training_run(
             run_name=payload.name,
-            git_commit=payload.git_commit,
+            git_commit=git_commit,
             config_path=payload.config_path,
             config_overrides=payload.config_overrides,
             submit_script=payload.submit_script,
@@ -104,7 +106,7 @@ def create_run(payload: RunCreate) -> RunResponse:
                 run_id,
                 payload.name,
                 status,
-                payload.git_commit,
+                git_commit,
                 payload.config_path,
                 json_dumps(payload.config_overrides),
                 payload.wandb_config_ref,
@@ -115,7 +117,74 @@ def create_run(payload: RunCreate) -> RunResponse:
             ),
         )
 
+        conn.execute(
+            """
+            INSERT INTO run_events (
+                event_id,
+                run_id,
+                event_type,
+                message,
+                old_status,
+                new_status,
+                created_at,
+                payload_json
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                str(uuid.uuid4()),
+                run_id,
+                "RUN_CREATED",
+                "Run was created",
+                None,
+                status,
+                created_at,
+                json_dumps(
+                    {
+                        "name": payload.name,
+                        "config_path": payload.config_path,
+                        "launch_now": payload.launch_now,
+                        "slurm_job_id": slurm_job_id,
+                        "wandb_run_id": payload.wandb_run_id,
+                    }
+                ),
+            ),
+        )
+
         if slurm_job_id:
+
+            conn.execute(
+                """
+                INSERT INTO run_events (
+                    event_id,
+                    run_id,
+                    event_type,
+                    message,
+                    old_status,
+                    new_status,
+                    created_at,
+                    payload_json
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    str(uuid.uuid4()),
+                    run_id,
+                    "SLURM_JOB_SUBMITTED",
+                    f"Slurm job {slurm_job_id} was submitted",
+                    "created",
+                    "queued",
+                    created_at,
+                    json_dumps(
+                        {
+                            "slurm_job_id": slurm_job_id,
+                            "log_path": log_path,
+                            "error_log_path": error_log_path,
+                        }
+                    ),
+                ),
+            )
+            
             conn.execute(
                 """
                 INSERT INTO jobs (
@@ -150,7 +219,7 @@ def create_run(payload: RunCreate) -> RunResponse:
         run_id=run_id,
         name=payload.name,
         status=status,
-        git_commit=payload.git_commit,
+        git_commit=git_commit,
         config_path=payload.config_path,
         config_overrides=payload.config_overrides,
         wandb_config_ref=payload.wandb_config_ref,
