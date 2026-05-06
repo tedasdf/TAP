@@ -9,6 +9,7 @@ export type ApiRun = {
   slurm_job_id?: string | null;
   wandb_run_id?: string | null;
   created_at: string;
+  last_checked_at?: string | null;
   error_message?: string | null;
 
   // optional summary fields if backend includes them
@@ -56,4 +57,20 @@ export type CreateRunPayload = {
   config_path: string;
   config_overrides?: string;
   wandb_config_ref?: string;
+};
+
+
+
+export type ApiRunRefreshResponse = {
+  run: ApiRun;
+  job: unknown | null;
+  sync: {
+    checked_at: string;
+    message?: string;
+    slurm_job_id?: string;
+    status_changed?: boolean;
+    old_status?: string;
+    new_status?: string;
+    source?: string;
+  };
 };
