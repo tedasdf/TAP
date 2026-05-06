@@ -22,6 +22,27 @@ from app.services.launcher import (
 from app.services.jobs import derive_run_status, refresh_job_from_slurm
 from app.services.run_events import create_run_event
 
+
+import subprocess
+from pathlib import Path
+
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
+
+
+def resolve_local_git_commit() -> str | None:
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=PROJECT_ROOT,
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        return result.stdout.strip()
+    except Exception:
+        return None
+    
+
 router = APIRouter(tags=["runs"])
 
 
@@ -62,7 +83,15 @@ def create_run(payload: RunCreate) -> RunResponse:
     log_path: str | None = None
     error_log_path: str | None = None
 
-    git_commit = payload.git_commit or "unknown"
+    resolved_git_commit = payload.git_commit or resolve_local_git_commit()
+
+    if payload.launch_now and not resolved_git_commit:
+        raise HTTPException(
+            status_code=400,
+            detail="launch_now=true requires a valid git commit, but TAP could not resolve one.",
+        )
+
+    git_commit = resolved_git_commit or "unknown"
 
     if payload.launch_now:
         code, stdout, stderr, slurm_job_id = launch_training_run(
