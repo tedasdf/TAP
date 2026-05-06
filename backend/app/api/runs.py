@@ -23,25 +23,26 @@ from app.services.jobs import derive_run_status, refresh_job_from_slurm
 from app.services.run_events import create_run_event
 
 
-import subprocess
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 
+import shlex
 
-def resolve_local_git_commit() -> str | None:
-    try:
-        result = subprocess.run(
-            ["git", "rev-parse", "HEAD"],
-            cwd=PROJECT_ROOT,
-            capture_output=True,
-            text=True,
-            check=True,
-        )
-        return result.stdout.strip()
-    except Exception:
+M3_REPO_PATH = "/home/slo/vf38_scratch2/sloo0021/slm_repo"
+
+def resolve_remote_training_git_commit() -> str | None:
+    remote_repo_path = M3_REPO_PATH
+
+    code, stdout, stderr = run_ssh_command(
+        f"cd {shlex.quote(remote_repo_path)} && git rev-parse HEAD"
+    )
+
+    if code != 0:
         return None
-    
+
+    commit = stdout.strip()
+    return commit or None
 
 router = APIRouter(tags=["runs"])
 
