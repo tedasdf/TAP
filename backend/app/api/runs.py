@@ -84,7 +84,7 @@ def create_run(payload: RunCreate) -> RunResponse:
     log_path: str | None = None
     error_log_path: str | None = None
 
-    resolved_git_commit = payload.git_commit or resolve_local_git_commit()
+    resolved_git_commit = payload.git_commit or resolve_remote_training_git_commit()
 
     if payload.launch_now and not resolved_git_commit:
         raise HTTPException(
