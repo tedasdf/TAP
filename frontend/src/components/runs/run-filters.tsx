@@ -10,7 +10,16 @@ type RunFiltersProps = {
   onChange: (value: FilterValue) => void;
 };
 
-const filters: FilterValue[] = ["all", "running", "queued", "failed", "completed"];
+const filters: FilterValue[] = [
+  "all",
+  "created",
+  "queued",
+  "running",
+  "completed",
+  "failed",
+  "cancelled",
+  "unknown",
+];
 
 export function RunFilters({ value, onChange }: RunFiltersProps) {
   return (

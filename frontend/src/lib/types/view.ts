@@ -1,5 +1,12 @@
-export type RunStatus = "running" | "queued" | "failed" | "completed" | "cancelled";
-
+export type RunStatus =
+  | "created"
+  | "queued"
+  | "running"
+  | "completed"
+  | "failed"
+  | "cancelled"
+  | "unknown";
+  
 export type HealthState = "healthy" | "connected" | "degraded" | "disconnected" | "unknown";
 
 export type RunCardView = {

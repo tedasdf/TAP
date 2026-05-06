@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { ArrowLeft, RefreshCw, Square } from "lucide-react";
@@ -13,7 +13,13 @@ import { JobTab } from "@/components/run-detail/job-tab";
 import { ConfigTab } from "@/components/run-detail/config-tab";
 import { EmptyState } from "@/components/shared/empty-state";
 import { LoadingState } from "@/components/shared/loading-state";
-import { useCancelRun, useRun, useRunMetrics, useSyncWandb } from "@/lib/hooks/use-runs";
+import {
+  useCancelRun,
+  useRefreshRun,
+  useRun,
+  useRunMetrics,
+  useSyncWandb,
+} from "@/lib/hooks/use-runs";
 import { useJob, useJobLogs } from "@/lib/hooks/use-jobs";
 import { ApiRun, ApiRunMetrics } from "@/lib/types/api";
 
@@ -83,6 +89,9 @@ function buildMetricsSeries(run: ApiRun, metrics?: ApiRunMetrics) {
   ];
 }
 
+const ACTIVE_RUN_STATUSES = new Set(["created", "queued", "running", "unknown"]);
+
+
 export default function RunDetailPage() {
   const params = useParams<{ runId: string }>();
   const runId = params.runId;
@@ -98,6 +107,17 @@ export default function RunDetailPage() {
 
   const cancelRunMutation = useCancelRun();
   const syncWandbMutation = useSyncWandb();
+
+  const refreshRunMutation = useRefreshRun();
+  
+  const runStatus = runQuery.data?.status;
+  const hasExternalTracker = Boolean(runQuery.data?.slurm_job_id);
+
+  const shouldAutoRefresh =
+    Boolean(runId) &&
+    Boolean(runStatus) &&
+    ACTIVE_RUN_STATUSES.has(runStatus as "created" | "queued" | "running" | "unknown") &&
+    hasExternalTracker;
 
   const isLoading =
     runQuery.isLoading ||
@@ -138,6 +158,43 @@ export default function RunDetailPage() {
     } catch {}
   }
 
+  const handleRefresh = useCallback(async () => {
+    if (!runId || refreshRunMutation.isPending) return;
+
+    try {
+      await refreshRunMutation.mutateAsync(runId);
+
+      await Promise.all([
+        runQuery.refetch(),
+        metricsQuery.refetch(),
+        slurmJobId ? jobQuery.refetch() : Promise.resolve(),
+        slurmJobId ? jobLogsQuery.refetch() : Promise.resolve(),
+      ]);
+    } catch {
+      // Keep the page stable if refresh fails.
+    }
+  }, [
+    runId,
+    refreshRunMutation,
+    runQuery,
+    metricsQuery,
+    slurmJobId,
+    jobQuery,
+    jobLogsQuery,
+  ]);
+
+  useEffect(() => {
+    if (!shouldAutoRefresh) return;
+
+    const intervalId = window.setInterval(() => {
+      void handleRefresh();
+    }, 15_000);
+
+    return () => {
+      window.clearInterval(intervalId);
+    };
+  }, [shouldAutoRefresh, handleRefresh]);
+
   return (
     <AppShell>
       <div className="space-y-5">
@@ -165,14 +222,10 @@ export default function RunDetailPage() {
           <button
             type="button"
             onClick={() => {
-              runQuery.refetch();
-              metricsQuery.refetch();
-              if (slurmJobId) {
-                jobQuery.refetch();
-                jobLogsQuery.refetch();
-              }
+              void handleRefresh();
             }}
-            className="inline-flex items-center justify-center gap-2 rounded-2xl border border-zinc-800 bg-zinc-900/70 px-4 py-3 text-sm text-zinc-200"
+            disabled={refreshRunMutation.isPending}
+            className="inline-flex items-center justify-center gap-2 rounded-2xl border border-zinc-800 bg-zinc-900/70 px-4 py-3 text-sm text-zinc-200 disabled:opacity-60"
           >
             <RefreshCw className="h-4 w-4" />
             Refresh

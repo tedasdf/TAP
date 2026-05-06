@@ -4,9 +4,12 @@ from pathlib import Path
 from typing import Iterator
 
 from app.config import settings
+import os 
 
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+DEFAULT_DB_PATH = PROJECT_ROOT / os.getenv("TAP_DB_PATH")
+DB_PATH = Path(DEFAULT_DB_PATH)
 
-DB_PATH = Path(settings.TAP_DB_PATH)
 
 def _ensure_db_parent() -> None:
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
@@ -42,6 +45,7 @@ def init_db() -> None:
                 slurm_job_id TEXT,
                 wandb_run_id TEXT,
                 created_at TEXT NOT NULL,
+                last_checked_at TEXT,
                 error_message TEXT
             )
             """
@@ -60,6 +64,22 @@ def init_db() -> None:
                 exit_status TEXT,
                 log_path TEXT,
                 error_log_path TEXT,
+                FOREIGN KEY (run_id) REFERENCES runs(run_id) ON DELETE CASCADE
+            )
+            """
+        )
+
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS run_events (
+                event_id TEXT PRIMARY KEY,
+                run_id TEXT NOT NULL,
+                event_type TEXT NOT NULL,
+                message TEXT NOT NULL,
+                old_status TEXT,
+                new_status TEXT,
+                created_at TEXT NOT NULL,
+                payload_json TEXT,
                 FOREIGN KEY (run_id) REFERENCES runs(run_id) ON DELETE CASCADE
             )
             """

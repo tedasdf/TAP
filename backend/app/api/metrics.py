@@ -9,7 +9,7 @@ from app.services.wandb_client import get_run_snapshot
 router = APIRouter(tags=["metrics"])
 
 
-def ensure_run_exists(run_id: str) -> None:
+def ensure_run_exists(run_id: str) -> None: # dudplicate with runs.py
     with get_db() as conn:
         row = conn.execute(
             "SELECT run_id FROM runs WHERE run_id = ?",
