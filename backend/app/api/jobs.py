@@ -77,6 +77,12 @@ def update_job(job_id: str, payload: JobUpdate) -> dict[str, Any]:
             "SELECT status FROM runs WHERE run_id = ?",
             (updated["run_id"],),
         ).fetchone()
+        
+        if run_row is None:
+            raise HTTPException(
+                status_code=500,
+                detail=f"Job '{job_id}' points to missing run '{updated['run_id']}'",
+            )
 
         old_run_status = run_row["status"]
 
