@@ -10,9 +10,28 @@ from app.config import settings
 
 # Temporary hardcoded values for MVP.
 # Later, move these fully back into config/.env if you want.
-M3_REPO_PATH = "vf38_scratch2/sloo0021/slm_repo"
-M3_GIT_REMOTE = "origin"
+M3_REPO_PATH = settings.TAP_M3_REPO_PATH
+M3_GIT_REMOTE = settings.TAP_GIT_REMOTE
 
+
+
+def get_remote_git_state() -> dict[str, Any]:
+    script = f"""
+set -e
+cd {shlex.quote(M3_REPO_PATH)}
+COMMIT=$(git rev-parse HEAD)
+BRANCH=$(git branch --show-current || true)
+DIRTY=$(test -n "$(git status --porcelain)" && echo true || echo false)
+
+printf '{{"commit":"%s","branch":"%s","dirty":%s}}' "$COMMIT" "$BRANCH" "$DIRTY"
+""".strip()
+
+    code, stdout, stderr = run_ssh_command(f"bash -lc {shlex.quote(script)}")
+
+    if code != 0:
+        raise RuntimeError(stderr or "Failed to read remote git state")
+
+    return json.loads(stdout)
 
 def parse_slurm_job_id(output: str) -> str | None:
     match = re.search(r"Submitted batch job\s+(\d+)", output)
@@ -30,7 +49,6 @@ def run_ssh_command(remote_command: str) -> tuple[int, str, str]:
     )
     return completed.returncode, completed.stdout.strip(), completed.stderr.strip()
 
-
 def build_remote_launch_command(
     *,
     run_name: str,
@@ -43,15 +61,14 @@ def build_remote_launch_command(
     overrides_json = json.dumps(config_overrides or {}, ensure_ascii=False)
 
     script = f"""
-set -e
-cd {shlex.quote(M3_REPO_PATH)}
-git fetch {shlex.quote(M3_GIT_REMOTE)} --prune
-git checkout {shlex.quote(git_commit)}
-export CONFIG_PATH={shlex.quote(config_path)}
-export CONFIG_OVERRIDES_JSON={shlex.quote(overrides_json)}
-export TAP_RUN_NAME={shlex.quote(run_name)}
-sbatch --job-name={shlex.quote(run_name)} {shlex.quote(submit_script)}
-""".strip()
+        set -e
+        cd {shlex.quote(M3_REPO_PATH)}
+        export TAP_GIT_COMMIT={shlex.quote(git_commit)}
+        export CONFIG_PATH={shlex.quote(config_path)}
+        export CONFIG_OVERRIDES_JSON={shlex.quote(overrides_json)}
+        export TAP_RUN_NAME={shlex.quote(run_name)}
+        sbatch --job-name={shlex.quote(run_name)} {shlex.quote(submit_script)}
+    """.strip()
 
     return f"bash -lc {shlex.quote(script)}"
 
