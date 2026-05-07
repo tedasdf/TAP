@@ -56,4 +56,4 @@ build/
 .tmp/
 temp/
 
-.env
+.env"data/*.db" 
