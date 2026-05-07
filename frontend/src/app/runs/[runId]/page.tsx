@@ -324,9 +324,14 @@ export default function RunDetailPage() {
             {activeTab === "config" && (
               <ConfigTab
                 configPath={runQuery.data.config_path}
-                configOverrides={runQuery.data.config_overrides ?? undefined}
-                gitCommit={runQuery.data.git_commit ?? undefined}
-                wandbRunId={runQuery.data.wandb_run_id ?? undefined}
+                configOverrides={
+                  runQuery.data.config_overrides
+                    ? JSON.stringify(runQuery.data.config_overrides, null, 2)
+                    : undefined
+                }
+                configSnapshot={runQuery.data.config_snapshot}
+                gitCommit={runQuery.data.git_commit}
+                wandbRunId={runQuery.data.wandb_run_id}
               />
             )}
           </>
