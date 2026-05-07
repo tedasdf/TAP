@@ -66,6 +66,14 @@ def build_config_snapshot(
         "wandb_config_ref": payload.wandb_config_ref,
         "wandb_run_id": payload.wandb_run_id,
         "created_at": created_at,
+        "launch_metadata": {
+            "submit_script": payload.submit_script,
+            "remote_repo_path": settings.TAP_M3_REPO_PATH,
+            "remote_host": settings.TAP_M3_HOST,
+            "working_directory": settings.TAP_M3_REPO_PATH,
+            "submitted_at": created_at if payload.launch_now else None,
+            "launch_command": None,
+        }
     }
 
 def utc_now_iso() -> str:
@@ -481,7 +489,7 @@ def refresh_run(run_id: str) -> dict[str, Any]:
     run_dict["config_overrides"] = json_loads(run_dict.get("config_overrides"))
     run_dict["config_snapshot"] = json_loads(run_dict.get("config_snapshot_json"))
     run_dict.pop("config_snapshot_json", None)  
-    
+
     return {
         "run": run_dict,
         "job": dict(updated_job) if updated_job else None,
