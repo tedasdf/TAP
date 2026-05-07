@@ -9,7 +9,6 @@ from sqlite3 import Connection, Row
 from typing import Any, Iterable
 
 from app.config import settings
-from app.services.wandb_client import get_wandb_run_path
 
 
 STEP_KEYS = ["_step", "step", "global_step"]
@@ -348,6 +347,7 @@ def sync_wandb_metric_history(
     """
 
     import wandb
+    from app.services.wandb_client import get_wandb_run_path
 
     api = wandb.Api()
     wandb_run = api.run(get_wandb_run_path(wandb_run_id))
