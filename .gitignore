@@ -21,6 +21,10 @@ backend/*.sqlite3
 
 # Runtime data
 data/
+data/*.db
+backend/data/*.db
+*.sqlite
+*.sqlite3
 !data/.gitkeep
 
 # Frontend / Next.js
