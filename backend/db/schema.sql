@@ -62,3 +62,39 @@ CREATE TABLE IF NOT EXISTS notifications (
     FOREIGN KEY (run_id) REFERENCES runs(run_id) ON DELETE CASCADE,
     FOREIGN KEY (job_id) REFERENCES jobs(job_id) ON DELETE CASCADE
 );
+
+CREATE TABLE IF NOT EXISTS metric_history (
+    metric_id TEXT PRIMARY KEY,
+    run_id TEXT NOT NULL,
+
+    step INTEGER,
+    epoch INTEGER,
+
+    train_loss REAL,
+    val_loss REAL,
+    learning_rate REAL,
+    runtime_seconds REAL,
+
+    tokens_seen INTEGER,
+    samples_seen INTEGER,
+    tokens_per_second REAL,
+
+    gpu_memory_used REAL,
+    gpu_utilization REAL,
+
+    source TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+
+    FOREIGN KEY (run_id) REFERENCES runs(run_id) ON DELETE CASCADE,
+
+    UNIQUE (run_id, step, source)
+);
+
+CREATE INDEX IF NOT EXISTS idx_metric_history_run_id
+ON metric_history(run_id);
+
+CREATE INDEX IF NOT EXISTS idx_metric_history_run_step
+ON metric_history(run_id, step);
+
+CREATE INDEX IF NOT EXISTS idx_metric_history_run_created_at
+ON metric_history(run_id, created_at);

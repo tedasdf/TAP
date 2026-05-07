@@ -59,3 +59,24 @@ class NotificationCreate(BaseModel):
     message: str
     run_id: str | None = None
     job_id: str | None = None
+
+
+class MetricPointCreate(BaseModel):
+    step: int
+    epoch: int | None = None
+    train_loss: float | None = None
+    val_loss: float | None = None
+    learning_rate: float | None = None
+    tokens_seen: int | None = None
+    samples_seen: int | None = None
+    runtime_seconds: float | None = None
+    tokens_per_second: float | None = None
+    gpu_memory_used: float | None = None
+    gpu_utilization: float | None = None
+    source: str = "manual"
+
+
+class MetricPointResponse(MetricPointCreate):
+    metric_id: str
+    run_id: str
+    created_at: str

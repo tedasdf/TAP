@@ -62,6 +62,24 @@ export type ApiRunMetrics = {
   latest_metric_timestamp?: string | null;
 };
 
+export type ApiMetricPoint = {
+  metric_id: string;
+  run_id: string;
+  step: number;
+  epoch?: number | null;
+  train_loss?: number | null;
+  val_loss?: number | null;
+  learning_rate?: number | null;
+  tokens_seen?: number | null;
+  samples_seen?: number | null;
+  runtime_seconds?: number | null;
+  tokens_per_second?: number | null;
+  gpu_memory_used?: number | null;
+  gpu_utilization?: number | null;
+  source: string;
+  created_at: string;
+};
+
 export type CreateRunPayload = {
   name: string;
   config_path: string;
