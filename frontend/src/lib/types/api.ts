@@ -1,10 +1,20 @@
+export type ApiRunStatus =
+  | "created"
+  | "queued"
+  | "running"
+  | "completed"
+  | "failed"
+  | "cancelled"
+  | "unknown";
+
 export type ApiRun = {
   run_id: string;
   name: string;
-  status: "running" | "queued" | "failed" | "completed" | "cancelled";
+  status: ApiRunStatus;
   git_commit?: string | null;
   config_path: string;
-  config_overrides?: string | null;
+  config_overrides?: Record<string, unknown> | null;
+  config_snapshot?: Record<string, unknown> | null;
   wandb_config_ref?: string | null;
   slurm_job_id?: string | null;
   wandb_run_id?: string | null;
