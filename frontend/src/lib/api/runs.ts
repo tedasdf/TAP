@@ -1,5 +1,5 @@
 import { apiRequest } from "@/lib/api/client";
-import { ApiRun, ApiRunMetrics, ApiRunRefreshResponse, CreateRunPayload } from "@/lib/types/api";
+import { ApiMetricHistoryPoint, ApiRun, ApiRunMetrics, CreateRunPayload } from "@/lib/types/api";
 
 export function getRuns() {
   return apiRequest<ApiRun[]>("/runs");
@@ -10,7 +10,17 @@ export function getRun(runId: string) {
 }
 
 export function getRunMetrics(runId: string) {
-  return apiRequest<ApiRunMetrics>(`/runs/${runId}/metrics`);
+  return apiRequest<ApiRunMetrics | null>(`/runs/${runId}/metrics/latest`);
+}
+
+export function getRunMetricHistory(runId: string) {
+  return apiRequest<ApiMetricHistoryPoint[]>(`/runs/${runId}/metrics/history`);
+}
+
+export function refreshRun(runId: string) {
+  return apiRequest(`/runs/${runId}/refresh`, {
+    method: "POST",
+  });
 }
 
 export function syncWandb(runId: string) {
@@ -32,8 +42,17 @@ export function createRun(payload: CreateRunPayload) {
   });
 }
 
-export async function refreshRun(runId: string): Promise<ApiRunRefreshResponse> {
-  return apiRequest<ApiRunRefreshResponse>(`/runs/${runId}/refresh`, {
-    method: "POST",
-  });
+export type RunEvent = {
+  event_id: string;
+  run_id: string;
+  event_type: string;
+  message: string;
+  old_status?: string | null;
+  new_status?: string | null;
+  created_at: string;
+  payload?: Record<string, unknown>;
+};
+
+export async function getRunEvents(runId: string): Promise<RunEvent[]> {
+  return apiRequest<RunEvent[]>(`/runs/${runId}/events`);
 }

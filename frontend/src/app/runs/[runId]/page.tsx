@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { ArrowLeft, RefreshCw, Square } from "lucide-react";
@@ -13,17 +13,11 @@ import { JobTab } from "@/components/run-detail/job-tab";
 import { ConfigTab } from "@/components/run-detail/config-tab";
 import { EmptyState } from "@/components/shared/empty-state";
 import { LoadingState } from "@/components/shared/loading-state";
-import {
-  useCancelRun,
-  useRefreshRun,
-  useRun,
-  useRunMetrics,
-  useSyncWandb,
-} from "@/lib/hooks/use-runs";
+import { useCancelRun, useRefreshRun, useRun, useRunEvents, useRunMetricHistory, useRunMetrics, useSyncWandb } from "@/lib/hooks/use-runs";
 import { useJob, useJobLogs } from "@/lib/hooks/use-jobs";
-import { ApiRun, ApiRunMetrics } from "@/lib/types/api";
+import { ApiMetricHistoryPoint, ApiRun, ApiRunMetrics } from "@/lib/types/api";
 
-function buildOverviewRun(run: ApiRun, metrics?: ApiRunMetrics) {
+function buildOverviewRun(run: ApiRun, metrics?: ApiRunMetrics | null) {
   return {
     id: run.run_id,
     name: run.name,
@@ -46,51 +40,17 @@ function buildOverviewRun(run: ApiRun, metrics?: ApiRunMetrics) {
   };
 }
 
-function buildMetricsSeries(run: ApiRun, metrics?: ApiRunMetrics) {
-  const currentStep = metrics?.current_step ?? run.current_step ?? 0;
-  const trainingLoss = metrics?.training_loss ?? run.training_loss ?? null;
-  const validationLoss = metrics?.validation_loss ?? run.validation_loss ?? null;
-  const learningRate = metrics?.learning_rate ?? run.learning_rate ?? null;
-
-  if (
-    currentStep === 0 ||
-    trainingLoss === null ||
-    validationLoss === null ||
-    learningRate === null
-  ) {
-    return [];
-  }
-
-  return [
-    {
-      step: Math.max(1, Math.floor(currentStep * 0.2)),
-      trainingLoss: Number(trainingLoss) + 0.9,
-      validationLoss: Number(validationLoss) + 1.0,
-      learningRate: Number(learningRate) * 0.4,
-    },
-    {
-      step: Math.max(1, Math.floor(currentStep * 0.45)),
-      trainingLoss: Number(trainingLoss) + 0.55,
-      validationLoss: Number(validationLoss) + 0.65,
-      learningRate: Number(learningRate) * 0.75,
-    },
-    {
-      step: Math.max(1, Math.floor(currentStep * 0.7)),
-      trainingLoss: Number(trainingLoss) + 0.22,
-      validationLoss: Number(validationLoss) + 0.28,
-      learningRate: Number(learningRate),
-    },
-    {
-      step: currentStep,
-      trainingLoss: Number(trainingLoss),
-      validationLoss: Number(validationLoss),
-      learningRate: Number(learningRate),
-    },
-  ];
+function buildMetricsSeries(history: ApiMetricHistoryPoint[]) {
+  return history
+    .filter((point) => typeof point.step === "number")
+    .map((point) => ({
+      step: point.step as number,
+      trainingLoss: point.train_loss ?? null,
+      validationLoss: point.val_loss ?? null,
+      learningRate: point.learning_rate ?? null,
+    }))
+    .sort((a, b) => a.step - b.step);
 }
-
-const ACTIVE_RUN_STATUSES = new Set(["created", "queued", "running", "unknown"]);
-
 
 export default function RunDetailPage() {
   const params = useParams<{ runId: string }>();
@@ -100,28 +60,22 @@ export default function RunDetailPage() {
 
   const runQuery = useRun(runId);
   const metricsQuery = useRunMetrics(runId);
+  const metricHistoryQuery = useRunMetricHistory(runId);
+  const eventsQuery = useRunEvents(runId);
+  const events = eventsQuery.data ?? [];
 
   const slurmJobId = runQuery.data?.slurm_job_id;
   const jobQuery = useJob(slurmJobId);
   const jobLogsQuery = useJobLogs(slurmJobId);
 
   const cancelRunMutation = useCancelRun();
-  const syncWandbMutation = useSyncWandb();
-
   const refreshRunMutation = useRefreshRun();
-  
-  const runStatus = runQuery.data?.status;
-  const hasExternalTracker = Boolean(runQuery.data?.slurm_job_id);
-
-  const shouldAutoRefresh =
-    Boolean(runId) &&
-    Boolean(runStatus) &&
-    ACTIVE_RUN_STATUSES.has(runStatus as "created" | "queued" | "running" | "unknown") &&
-    hasExternalTracker;
+  const syncWandbMutation = useSyncWandb();
 
   const isLoading =
     runQuery.isLoading ||
     (activeTab === "overview" && metricsQuery.isLoading) ||
+    (activeTab === "metrics" && metricHistoryQuery.isLoading) ||
     (activeTab === "job" && !!slurmJobId && jobQuery.isLoading) ||
     (activeTab === "logs" && !!slurmJobId && jobLogsQuery.isLoading);
 
@@ -133,14 +87,14 @@ export default function RunDetailPage() {
   }, [runQuery.data, metricsQuery.data]);
 
   const metricsSeries = useMemo(() => {
-    if (!runQuery.data) return [];
-    return buildMetricsSeries(runQuery.data, metricsQuery.data);
-  }, [runQuery.data, metricsQuery.data]);
+    return buildMetricsSeries(metricHistoryQuery.data ?? []);
+  }, [metricHistoryQuery.data]);
 
   const logsData = useMemo(() => {
     const payload = jobLogsQuery.data;
     if (!payload) return [];
     if (Array.isArray(payload.logs) && payload.logs.length > 0) return payload.logs;
+    if (Array.isArray(payload.lines) && payload.lines.length > 0) return payload.lines;
     return [...(payload.stdout ?? []), ...(payload.stderr ?? [])];
   }, [jobLogsQuery.data]);
 
@@ -148,6 +102,26 @@ export default function RunDetailPage() {
     if (!runId) return;
     try {
       await cancelRunMutation.mutateAsync(runId);
+      await Promise.all([
+        runQuery.refetch(),
+        eventsQuery.refetch(),
+        slurmJobId ? jobQuery.refetch() : Promise.resolve(),
+      ]);
+    } catch {}
+  }
+
+  async function handleRefresh() {
+    if (!runId) return;
+    try {
+      await refreshRunMutation.mutateAsync(runId);
+      await Promise.all([
+        runQuery.refetch(),
+        metricsQuery.refetch(),
+        metricHistoryQuery.refetch(),
+        eventsQuery.refetch(),
+        slurmJobId ? jobQuery.refetch() : Promise.resolve(),
+        slurmJobId ? jobLogsQuery.refetch() : Promise.resolve(),
+      ]);
     } catch {}
   }
 
@@ -155,45 +129,9 @@ export default function RunDetailPage() {
     if (!runId) return;
     try {
       await syncWandbMutation.mutateAsync(runId);
+      await Promise.all([metricsQuery.refetch(), metricHistoryQuery.refetch()]);
     } catch {}
   }
-
-  const handleRefresh = useCallback(async () => {
-    if (!runId || refreshRunMutation.isPending) return;
-
-    try {
-      await refreshRunMutation.mutateAsync(runId);
-
-      await Promise.all([
-        runQuery.refetch(),
-        metricsQuery.refetch(),
-        slurmJobId ? jobQuery.refetch() : Promise.resolve(),
-        slurmJobId ? jobLogsQuery.refetch() : Promise.resolve(),
-      ]);
-    } catch {
-      // Keep the page stable if refresh fails.
-    }
-  }, [
-    runId,
-    refreshRunMutation,
-    runQuery,
-    metricsQuery,
-    slurmJobId,
-    jobQuery,
-    jobLogsQuery,
-  ]);
-
-  useEffect(() => {
-    if (!shouldAutoRefresh) return;
-
-    const intervalId = window.setInterval(() => {
-      void handleRefresh();
-    }, 15_000);
-
-    return () => {
-      window.clearInterval(intervalId);
-    };
-  }, [shouldAutoRefresh, handleRefresh]);
 
   return (
     <AppShell>
@@ -221,14 +159,12 @@ export default function RunDetailPage() {
         <div className="grid grid-cols-3 gap-3">
           <button
             type="button"
-            onClick={() => {
-              void handleRefresh();
-            }}
+            onClick={handleRefresh}
             disabled={refreshRunMutation.isPending}
             className="inline-flex items-center justify-center gap-2 rounded-2xl border border-zinc-800 bg-zinc-900/70 px-4 py-3 text-sm text-zinc-200 disabled:opacity-60"
           >
             <RefreshCw className="h-4 w-4" />
-            Refresh
+            {refreshRunMutation.isPending ? "Refreshing..." : "Refresh"}
           </button>
 
           <button
@@ -252,6 +188,44 @@ export default function RunDetailPage() {
           </button>
         </div>
 
+        <section className="rounded-2xl border border-zinc-800 bg-zinc-950/40 p-4">
+          <div className="mb-3">
+            <h2 className="text-lg font-semibold">Timeline</h2>
+            <p className="text-sm text-zinc-400">
+              Run lifecycle events recorded by TAP.
+            </p>
+          </div>
+
+          {events.length === 0 ? (
+            <p className="text-sm text-zinc-400">
+              No events recorded yet.
+            </p>
+          ) : (
+            <div className="space-y-3">
+              {events.map((event) => (
+                <div key={event.event_id} className="rounded-lg border p-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="font-medium">{event.event_type}</div>
+                    <div className="text-xs text-zinc-400">
+                      {new Date(event.created_at).toLocaleString()}
+                    </div>
+                  </div>
+
+                  <div className="mt-1 text-sm text-zinc-400">
+                    {event.message}
+                  </div>
+
+                  {event.old_status || event.new_status ? (
+                    <div className="mt-2 text-xs text-zinc-400">
+                      {event.old_status ?? "none"} → {event.new_status ?? "none"}
+                    </div>
+                  ) : null}
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+
         <DetailTabs activeTab={activeTab} onChange={setActiveTab} />
 
         {isLoading ? (
@@ -270,8 +244,8 @@ export default function RunDetailPage() {
                 <MetricsTab data={metricsSeries} />
               ) : (
                 <EmptyState
-                  title="No metrics yet"
-                  description="This run does not have metric data available."
+                  title="No metric history yet"
+                  description="This run has no real metric history points yet. Sync W&B or submit metrics to populate charts."
                 />
               ))}
 
@@ -290,7 +264,7 @@ export default function RunDetailPage() {
                   title="No job logs"
                   description="This run does not have a Slurm job ID yet."
                 />
-              ))}
+            ))}
 
             {activeTab === "job" &&
               (slurmJobId ? (
@@ -324,14 +298,9 @@ export default function RunDetailPage() {
             {activeTab === "config" && (
               <ConfigTab
                 configPath={runQuery.data.config_path}
-                configOverrides={
-                  runQuery.data.config_overrides
-                    ? JSON.stringify(runQuery.data.config_overrides, null, 2)
-                    : undefined
-                }
-                configSnapshot={runQuery.data.config_snapshot}
-                gitCommit={runQuery.data.git_commit}
-                wandbRunId={runQuery.data.wandb_run_id}
+                configOverrides={runQuery.data.config_overrides ?? undefined}
+                gitCommit={runQuery.data.git_commit ?? undefined}
+                wandbRunId={runQuery.data.wandb_run_id ?? undefined}
               />
             )}
           </>
