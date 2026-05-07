@@ -44,6 +44,18 @@ def resolve_remote_training_git_commit() -> tuple[str | None, str | None]:
 router = APIRouter(tags=["runs"])
 
 
+def build_wandb_url(wandb_run_id: str | None) -> str | None:
+    if not wandb_run_id:
+        return None
+
+    entity = getattr(settings, "WANDB_ENTITY", None)
+    project = getattr(settings, "WANDB_PROJECT", None)
+
+    if not entity or not project:
+        return None
+
+    return f"https://wandb.ai/{entity}/{project}/runs/{wandb_run_id}"
+
 def build_config_snapshot(
     *,
     payload: RunCreate,
@@ -53,6 +65,8 @@ def build_config_snapshot(
     status: str,
     slurm_job_id: str | None,
 ) -> dict[str, Any]:
+    wandb_url = build_wandb_url(payload.wandb_run_id)
+
     return {
         "run_id": run_id,
         "name": payload.name,
@@ -66,6 +80,10 @@ def build_config_snapshot(
         "wandb_config_ref": payload.wandb_config_ref,
         "wandb_run_id": payload.wandb_run_id,
         "created_at": created_at,
+        "wandb": {
+            "run_id": payload.wandb_run_id,
+            "url": wandb_url,
+        },
         "launch_metadata": {
             "submit_script": payload.submit_script,
             "remote_repo_path": settings.TAP_M3_REPO_PATH,
@@ -73,7 +91,7 @@ def build_config_snapshot(
             "working_directory": settings.TAP_M3_REPO_PATH,
             "submitted_at": created_at if payload.launch_now else None,
             "launch_command": None,
-        }
+        },
     }
 
 def utc_now_iso() -> str:
