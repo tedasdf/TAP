@@ -8,13 +8,7 @@ from app.schemas import (
     MetricHistoryPointResponse,
     MetricSnapshotUpsert,
 )
-from app.services.metrics import (
-    get_latest_metrics,
-    get_metric_history,
-    insert_metric_history_from_latest,
-    sync_wandb_metric_history,
-    upsert_latest_metrics,
-)
+
 from app.services.wandb_client import get_run_snapshot
 
 router = APIRouter(tags=["metrics"])
