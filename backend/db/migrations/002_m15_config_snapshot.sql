@@ -1,0 +1,1 @@
+ALTER TABLE runs ADD COLUMN config_snapshot_json TEXT;

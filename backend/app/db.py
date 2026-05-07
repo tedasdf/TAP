@@ -1,15 +1,24 @@
+import os
 import sqlite3
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Iterator
 
-from app.config import settings
-import os 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-DEFAULT_DB_PATH = PROJECT_ROOT / os.getenv("TAP_DB_PATH")
-DB_PATH = Path(DEFAULT_DB_PATH)
+DEFAULT_DB_PATH = PROJECT_ROOT / "data" / "tap.db"
 
+raw_db_path = os.getenv("TAP_DB_PATH")
+
+if raw_db_path:
+    candidate_db_path = Path(raw_db_path)
+    DB_PATH = (
+        candidate_db_path
+        if candidate_db_path.is_absolute()
+        else PROJECT_ROOT / candidate_db_path
+    ).resolve()
+else:
+    DB_PATH = DEFAULT_DB_PATH.resolve()
 
 def _ensure_db_parent() -> None:
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
@@ -41,6 +50,7 @@ def init_db() -> None:
                 git_commit TEXT NOT NULL,
                 config_path TEXT NOT NULL,
                 config_overrides TEXT,
+                config_snapshot_json TEXT,
                 wandb_config_ref TEXT,
                 slurm_job_id TEXT,
                 wandb_run_id TEXT,

@@ -10,7 +10,7 @@ from app.config import settings
 
 # Temporary hardcoded values for MVP.
 # Later, move these fully back into config/.env if you want.
-M3_REPO_PATH = "/home/slo/vf38_scratch2/sloo0021/slm_repo"
+M3_REPO_PATH = "vf38_scratch2/sloo0021/slm_repo"
 M3_GIT_REMOTE = "origin"
 
 
