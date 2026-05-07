@@ -84,6 +84,17 @@ def build_config_snapshot(
             "run_id": payload.wandb_run_id,
             "url": wandb_url,
         },
+        "data_references": {
+            "dataset": (payload.config_overrides or {}).get("dataset")
+            or (payload.config_overrides or {}).get("data.dataset")
+            or (payload.config_overrides or {}).get("dataset.name")
+            or (payload.config_overrides or {}).get("data.dataset_name"),
+            "tokenizer": (payload.config_overrides or {}).get("tokenizer")
+            or (payload.config_overrides or {}).get("tokenizer.path")
+            or (payload.config_overrides or {}).get("tokenizer.name")
+            or (payload.config_overrides or {}).get("data.tokenizer"),
+            "raw_config_path": payload.config_path,
+        },
         "launch_metadata": {
             "submit_script": payload.submit_script,
             "remote_repo_path": settings.TAP_M3_REPO_PATH,
