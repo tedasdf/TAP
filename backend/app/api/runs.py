@@ -27,7 +27,7 @@ from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 
-M3_REPO_PATH = "/home/slo/vf38_scratch2/sloo0021/slm_repo"
+M3_REPO_PATH = "vf38_scratch2/sloo0021/slm_repo"
 
 import shlex
 
