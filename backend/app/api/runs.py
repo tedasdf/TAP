@@ -22,20 +22,22 @@ from app.services.launcher import (
 from app.services.jobs import derive_run_status, refresh_job_from_slurm
 from app.services.run_events import create_run_event
 
-
+import shlex
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 
-import shlex
-
 M3_REPO_PATH = "/home/slo/vf38_scratch2/sloo0021/slm_repo"
 
-def resolve_remote_training_git_commit() -> str | None:
-    remote_repo_path = M3_REPO_PATH
+import shlex
 
+from app.config import Settings
+from app.services.launcher import run_ssh_command
+
+
+def resolve_remote_training_git_commit() -> str | None:
     code, stdout, stderr = run_ssh_command(
-        f"cd {shlex.quote(remote_repo_path)} && git rev-parse HEAD"
+        f"cd {shlex.quote(Settings.TAP_M3_REPO_PATH)} && git rev-parse HEAD"
     )
 
     if code != 0:
