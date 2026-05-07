@@ -2,7 +2,6 @@
 # GET /runs
 # GET /runs/{run_id}
 # POST /runs/{run_id}/cancel
-
 import json
 import shlex
 import uuid
@@ -11,40 +10,36 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException
 
+from app.config import settings
 from app.db import get_db
 from app.schemas import RunCreate, RunResponse
+from app.services.jobs import derive_run_status, refresh_job_from_slurm
 from app.services.launcher import (
-    launch_training_run,
-    build_remote_log_path,
     build_remote_error_log_path,
+    build_remote_log_path,
+    launch_training_run,
     run_ssh_command,
 )
-from app.services.jobs import derive_run_status, refresh_job_from_slurm
 from app.services.run_events import create_run_event
 
-import shlex
-from pathlib import Path
+def resolve_remote_training_git_commit() -> tuple[str | None, str | None]:
+    remote_repo_path = settings.TAP_M3_REPO_PATH
 
-PROJECT_ROOT = Path(__file__).resolve().parents[3]
+    if not remote_repo_path:
+        return None, "settings.TAP_M3_REPO_PATH is empty"
 
-M3_REPO_PATH = "vf38_scratch2/sloo0021/slm_repo"
-
-import shlex
-
-from app.config import Settings
-from app.services.launcher import run_ssh_command
-
-
-def resolve_remote_training_git_commit() -> str | None:
-    code, stdout, stderr = run_ssh_command(
-        f"cd {shlex.quote(Settings.TAP_M3_REPO_PATH)} && git rev-parse HEAD"
-    )
+    command = f"cd {shlex.quote(remote_repo_path)} && git rev-parse HEAD"
+    code, stdout, stderr = run_ssh_command(command)
 
     if code != 0:
-        return None
+        return None, stderr or f"Remote git command failed with exit code {code}"
 
     commit = stdout.strip()
-    return commit or None
+
+    if not commit:
+        return None, "Remote git command succeeded but returned empty stdout"
+
+    return commit, None
 
 router = APIRouter(tags=["runs"])
 
@@ -86,15 +81,24 @@ def create_run(payload: RunCreate) -> RunResponse:
     log_path: str | None = None
     error_log_path: str | None = None
 
-    resolved_git_commit = payload.git_commit or resolve_remote_training_git_commit()
+    if payload.launch_now:
+        resolved_git_commit = payload.git_commit
 
-    if payload.launch_now and not resolved_git_commit:
-        raise HTTPException(
-            status_code=400,
-            detail="launch_now=true requires a valid git commit, but TAP could not resolve one.",
-        )
+        if not resolved_git_commit:
+            resolved_git_commit, git_error = resolve_remote_training_git_commit()
 
-    git_commit = resolved_git_commit or "unknown"
+            if not resolved_git_commit:
+                raise HTTPException(
+                    status_code=400,
+                    detail=(
+                        "launch_now=true requires a valid training repo git commit, "
+                        f"but TAP could not resolve one from the remote training repo. Reason: {git_error}"
+                    ),
+                )
+
+        git_commit = resolved_git_commit
+    else:
+        git_commit = payload.git_commit or "unknown"
 
     if payload.launch_now:
         code, stdout, stderr, slurm_job_id = launch_training_run(
