@@ -44,6 +44,30 @@ def resolve_remote_training_git_commit() -> tuple[str | None, str | None]:
 router = APIRouter(tags=["runs"])
 
 
+def build_config_snapshot(
+    *,
+    payload: RunCreate,
+    git_commit: str,
+    run_id: str,
+    created_at: str,
+    status: str,
+    slurm_job_id: str | None,
+) -> dict[str, Any]:
+    return {
+        "run_id": run_id,
+        "name": payload.name,
+        "git_commit": git_commit,
+        "config_path": payload.config_path,
+        "config_overrides": payload.config_overrides or {},
+        "submit_script": payload.submit_script,
+        "launch_now": payload.launch_now,
+        "status_at_creation": status,
+        "slurm_job_id": slurm_job_id,
+        "wandb_config_ref": payload.wandb_config_ref,
+        "wandb_run_id": payload.wandb_run_id,
+        "created_at": created_at,
+    }
+
 def utc_now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -59,6 +83,8 @@ def json_loads(value: str | None) -> dict[str, Any]:
 
 
 def ensure_run_exists(run_id: str) -> dict[str, Any]:
+    
+    
     with get_db() as conn:
         row = conn.execute(
             "SELECT * FROM runs WHERE run_id = ?",
@@ -122,6 +148,16 @@ def create_run(payload: RunCreate) -> RunResponse:
             status = "failed"
             error_message = combined_output or f"Launch failed with exit code {code}"
 
+
+    config_snapshot = build_config_snapshot(
+        payload=payload,
+        git_commit=git_commit,
+        run_id=run_id,
+        created_at=created_at,
+        status=status,
+        slurm_job_id=slurm_job_id,
+    )
+        
     with get_db() as conn:
         conn.execute(
             """
@@ -132,13 +168,14 @@ def create_run(payload: RunCreate) -> RunResponse:
                 git_commit,
                 config_path,
                 config_overrides,
+                config_snapshot_json,
                 wandb_config_ref,
                 slurm_job_id,
                 wandb_run_id,
                 created_at,
                 error_message
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 run_id,
@@ -147,6 +184,7 @@ def create_run(payload: RunCreate) -> RunResponse:
                 git_commit,
                 payload.config_path,
                 json_dumps(payload.config_overrides),
+                json_dumps(config_snapshot),
                 payload.wandb_config_ref,
                 slurm_job_id,
                 payload.wandb_run_id,
@@ -260,6 +298,7 @@ def create_run(payload: RunCreate) -> RunResponse:
         git_commit=git_commit,
         config_path=payload.config_path,
         config_overrides=payload.config_overrides,
+        config_snapshot=config_snapshot,
         wandb_config_ref=payload.wandb_config_ref,
         slurm_job_id=slurm_job_id,
         wandb_run_id=payload.wandb_run_id,
@@ -282,6 +321,8 @@ def list_runs() -> list[dict[str, Any]]:
     for row in rows:
         item = dict(row)
         item["config_overrides"] = json_loads(item.get("config_overrides"))
+        item["config_snapshot"] = json_loads(item.get("config_snapshot_json"))
+        item.pop("config_snapshot_json", None)
         runs.append(item)
 
     return runs
@@ -291,6 +332,8 @@ def list_runs() -> list[dict[str, Any]]:
 def get_run(run_id: str) -> dict[str, Any]:
     item = ensure_run_exists(run_id)
     item["config_overrides"] = json_loads(item.get("config_overrides"))
+    item["config_snapshot"] = json_loads(item.get("config_snapshot_json"))
+    item.pop("config_snapshot_json", None)
     return item
 
 
@@ -319,6 +362,8 @@ def refresh_run(run_id: str) -> dict[str, Any]:
 
         run_dict = dict(updated_run)
         run_dict["config_overrides"] = json_loads(run_dict.get("config_overrides"))
+        run_dict["config_snapshot"] = json_loads(run_dict.get("config_snapshot_json"))
+        run_dict.pop("config_snapshot_json", None)
 
         return {
             "run": run_dict,
@@ -434,7 +479,9 @@ def refresh_run(run_id: str) -> dict[str, Any]:
 
     run_dict = dict(updated_run)
     run_dict["config_overrides"] = json_loads(run_dict.get("config_overrides"))
-
+    run_dict["config_snapshot"] = json_loads(run_dict.get("config_snapshot_json"))
+    run_dict.pop("config_snapshot_json", None)  
+    
     return {
         "run": run_dict,
         "job": dict(updated_job) if updated_job else None,

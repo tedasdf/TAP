@@ -24,12 +24,14 @@ class RunResponse(BaseModel):
     status: str
     git_commit: str
     config_path: str
-    config_overrides: dict[str, Any]
-    wandb_config_ref: str | None
-    slurm_job_id: str | None
-    wandb_run_id: str | None
+    config_overrides: dict[str, Any] | None = None
+    config_snapshot: dict[str, Any] | None = None
+    wandb_config_ref: str | None = None
+    slurm_job_id: str | None = None
+    wandb_run_id: str | None = None
     created_at: str
-    error_message: str | None
+    last_checked_at: str | None = None
+    error_message: str | None = None
 
 
 class JobUpdate(BaseModel):
