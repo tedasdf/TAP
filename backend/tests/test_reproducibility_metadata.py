@@ -1,5 +1,5 @@
 from app.api.runs import build_config_snapshot
-
+from app.config import settings
 
 class DummyRunCreate:
     name = "m2-repro-test"
@@ -16,17 +16,7 @@ class DummyRunCreate:
     launch_now = True
 
 
-def test_config_snapshot_contains_core_run_metadata(monkeypatch):
-    monkeypatch.setattr(
-        "app.api.runs.settings.TAP_M3_REPO_PATH",
-        "vf38_scratch2/sloo0021/slm_repo",
-        raising=False,
-    )
-    monkeypatch.setattr(
-        "app.api.runs.settings.TAP_M3_HOST",
-        "m3",
-        raising=False,
-    )
+def test_config_snapshot_contains_core_run_metadata():
 
     payload = DummyRunCreate()
 
@@ -51,17 +41,8 @@ def test_config_snapshot_contains_core_run_metadata(monkeypatch):
     assert snapshot["created_at"] == "2026-05-07T11:30:00+00:00"
 
 
-def test_config_snapshot_contains_launch_metadata(monkeypatch):
-    monkeypatch.setattr(
-        "app.api.runs.settings.TAP_M3_REPO_PATH",
-        "vf38_scratch2/sloo0021/slm_repo",
-        raising=False,
-    )
-    monkeypatch.setattr(
-        "app.api.runs.settings.TAP_M3_HOST",
-        "m3",
-        raising=False,
-    )
+def test_config_snapshot_contains_launch_metadata():
+
 
     payload = DummyRunCreate()
 
@@ -77,24 +58,15 @@ def test_config_snapshot_contains_launch_metadata(monkeypatch):
     launch_metadata = snapshot["launch_metadata"]
 
     assert launch_metadata["submit_script"] == "scripts/slurm/test1.slurm"
-    assert launch_metadata["remote_repo_path"] == "vf38_scratch2/sloo0021/slm_repo"
-    assert launch_metadata["remote_host"] == "m3"
-    assert launch_metadata["working_directory"] == "vf38_scratch2/sloo0021/slm_repo"
+    assert launch_metadata["remote_repo_path"] == settings.TAP_M3_REPO_PATH
+    assert launch_metadata["remote_host"] == settings.TAP_M3_HOST
+    assert launch_metadata["working_directory"] == settings.TAP_M3_REPO_PATH
     assert launch_metadata["submitted_at"] == "2026-05-07T11:30:00+00:00"
     assert "launch_command" in launch_metadata
 
 
-def test_config_snapshot_contains_dataset_and_tokenizer_references(monkeypatch):
-    monkeypatch.setattr(
-        "app.api.runs.settings.TAP_M3_REPO_PATH",
-        "vf38_scratch2/sloo0021/slm_repo",
-        raising=False,
-    )
-    monkeypatch.setattr(
-        "app.api.runs.settings.TAP_M3_HOST",
-        "m3",
-        raising=False,
-    )
+def test_config_snapshot_contains_dataset_and_tokenizer_references():
+   
 
     payload = DummyRunCreate()
 
@@ -114,18 +86,8 @@ def test_config_snapshot_contains_dataset_and_tokenizer_references(monkeypatch):
     assert data_references["raw_config_path"] == "configs/train/test.yaml"
 
 
-def test_config_snapshot_handles_missing_optional_metadata(monkeypatch):
-    monkeypatch.setattr(
-        "app.api.runs.settings.TAP_M3_REPO_PATH",
-        "vf38_scratch2/sloo0021/slm_repo",
-        raising=False,
-    )
-    monkeypatch.setattr(
-        "app.api.runs.settings.TAP_M3_HOST",
-        "m3",
-        raising=False,
-    )
-
+def test_config_snapshot_handles_missing_optional_metadata():
+   
     class MinimalRunCreate:
         name = "minimal-run"
         git_commit = None
