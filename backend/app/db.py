@@ -1,24 +1,12 @@
-import os
 import sqlite3
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Iterator
 
+from app.config import settings
 
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
-DEFAULT_DB_PATH = PROJECT_ROOT / "data" / "tap.db"
 
-raw_db_path = os.getenv("TAP_DB_PATH")
-
-if raw_db_path:
-    candidate_db_path = Path(raw_db_path)
-    DB_PATH = (
-        candidate_db_path
-        if candidate_db_path.is_absolute()
-        else PROJECT_ROOT / candidate_db_path
-    ).resolve()
-else:
-    DB_PATH = DEFAULT_DB_PATH.resolve()
+DB_PATH = Path(settings.TAP_DB_PATH)
 
 def _ensure_db_parent() -> None:
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
@@ -50,7 +38,6 @@ def init_db() -> None:
                 git_commit TEXT NOT NULL,
                 config_path TEXT NOT NULL,
                 config_overrides TEXT,
-                config_snapshot_json TEXT,
                 wandb_config_ref TEXT,
                 slurm_job_id TEXT,
                 wandb_run_id TEXT,
@@ -108,6 +95,60 @@ def init_db() -> None:
                 latest_metric_timestamp TEXT,
                 FOREIGN KEY (run_id) REFERENCES runs(run_id) ON DELETE CASCADE
             )
+            """
+        )
+
+
+
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS metric_history (
+                metric_id TEXT PRIMARY KEY,
+                run_id TEXT NOT NULL,
+                step INTEGER,
+                epoch INTEGER,
+                train_loss REAL,
+                val_loss REAL,
+                learning_rate REAL,
+                runtime_seconds REAL,
+                tokens_seen INTEGER,
+                samples_seen INTEGER,
+                tokens_per_second REAL,
+                gpu_memory_used REAL,
+                gpu_utilization REAL,
+                source TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                FOREIGN KEY (run_id) REFERENCES runs(run_id) ON DELETE CASCADE
+            )
+            """
+        )
+
+        conn.execute(
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_metric_history_unique_run_step_source
+            ON metric_history(run_id, step, source)
+            WHERE step IS NOT NULL
+            """
+        )
+
+        conn.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_metric_history_run_id
+            ON metric_history(run_id)
+            """
+        )
+
+        conn.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_metric_history_run_step
+            ON metric_history(run_id, step)
+            """
+        )
+
+        conn.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_metric_history_run_created_at
+            ON metric_history(run_id, created_at)
             """
         )
 

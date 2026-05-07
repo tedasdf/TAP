@@ -2,108 +2,29 @@
 # GET /runs
 # GET /runs/{run_id}
 # POST /runs/{run_id}/cancel
+
 import json
 import shlex
 import uuid
 from datetime import datetime, timezone
 from typing import Any
 
-from fastapi import APIRouter, HTTPException
-
-from app.config import settings
+from fastapi import HTTPException, APIRouter
 from app.db import get_db
+from app.services.jobs import refresh_job_from_slurm, derive_run_status, reconcile_run_status
+from app.services.wandb_client import get_run_snapshot
+from app.services.metrics import insert_metric_history_from_latest, upsert_latest_metrics
 from app.schemas import RunCreate, RunResponse
-from app.services.jobs import derive_run_status, refresh_job_from_slurm
 from app.services.launcher import (
-    build_remote_error_log_path,
-    build_remote_log_path,
     launch_training_run,
+    build_remote_log_path,
+    build_remote_error_log_path,
     run_ssh_command,
+    get_remote_git_state,
 )
-from app.services.run_events import create_run_event
-
-def resolve_remote_training_git_commit() -> tuple[str | None, str | None]:
-    remote_repo_path = settings.TAP_M3_REPO_PATH
-
-    if not remote_repo_path:
-        return None, "settings.TAP_M3_REPO_PATH is empty"
-
-    command = f"cd {shlex.quote(remote_repo_path)} && git rev-parse HEAD"
-    code, stdout, stderr = run_ssh_command(command)
-
-    if code != 0:
-        return None, stderr or f"Remote git command failed with exit code {code}"
-
-    commit = stdout.strip()
-
-    if not commit:
-        return None, "Remote git command succeeded but returned empty stdout"
-
-    return commit, None
 
 router = APIRouter(tags=["runs"])
 
-
-def build_wandb_url(wandb_run_id: str | None) -> str | None:
-    if not wandb_run_id:
-        return None
-
-    entity = getattr(settings, "WANDB_ENTITY", None)
-    project = getattr(settings, "WANDB_PROJECT", None)
-
-    if not entity or not project:
-        return None
-
-    return f"https://wandb.ai/{entity}/{project}/runs/{wandb_run_id}"
-
-def build_config_snapshot(
-    *,
-    payload: RunCreate,
-    git_commit: str,
-    run_id: str,
-    created_at: str,
-    status: str,
-    slurm_job_id: str | None,
-) -> dict[str, Any]:
-    wandb_url = build_wandb_url(payload.wandb_run_id)
-
-    return {
-        "run_id": run_id,
-        "name": payload.name,
-        "git_commit": git_commit,
-        "config_path": payload.config_path,
-        "config_overrides": payload.config_overrides or {},
-        "submit_script": payload.submit_script,
-        "launch_now": payload.launch_now,
-        "status_at_creation": status,
-        "slurm_job_id": slurm_job_id,
-        "wandb_config_ref": payload.wandb_config_ref,
-        "wandb_run_id": payload.wandb_run_id,
-        "created_at": created_at,
-        "wandb": {
-            "run_id": payload.wandb_run_id,
-            "url": wandb_url,
-        },
-        "data_references": {
-            "dataset": (payload.config_overrides or {}).get("dataset")
-            or (payload.config_overrides or {}).get("data.dataset")
-            or (payload.config_overrides or {}).get("dataset.name")
-            or (payload.config_overrides or {}).get("data.dataset_name"),
-            "tokenizer": (payload.config_overrides or {}).get("tokenizer")
-            or (payload.config_overrides or {}).get("tokenizer.path")
-            or (payload.config_overrides or {}).get("tokenizer.name")
-            or (payload.config_overrides or {}).get("data.tokenizer"),
-            "raw_config_path": payload.config_path,
-        },
-        "launch_metadata": {
-            "submit_script": payload.submit_script,
-            "remote_repo_path": settings.TAP_M3_REPO_PATH,
-            "remote_host": settings.TAP_M3_HOST,
-            "working_directory": settings.TAP_M3_REPO_PATH,
-            "submitted_at": created_at if payload.launch_now else None,
-            "launch_command": None,
-        },
-    }
 
 def utc_now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
@@ -120,8 +41,6 @@ def json_loads(value: str | None) -> dict[str, Any]:
 
 
 def ensure_run_exists(run_id: str) -> dict[str, Any]:
-    
-    
     with get_db() as conn:
         row = conn.execute(
             "SELECT * FROM runs WHERE run_id = ?",
@@ -133,35 +52,61 @@ def ensure_run_exists(run_id: str) -> dict[str, Any]:
 
     return dict(row)
 
+def create_run_event(
+    conn,
+    *,
+    run_id: str,
+    event_type: str,
+    message: str,
+    old_status: str | None = None,
+    new_status: str | None = None,
+    payload: dict[str, Any] | None = None,
+) -> None:
+    conn.execute(
+        """
+        INSERT INTO run_events (
+            event_id,
+            run_id,
+            event_type,
+            message,
+            old_status,
+            new_status,
+            created_at,
+            payload_json
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            str(uuid.uuid4()),
+            run_id,
+            event_type,
+            message,
+            old_status,
+            new_status,
+            utc_now_iso(),
+            json_dumps(payload),
+        ),
+    )
+
 @router.post("/runs", response_model=RunResponse)
 def create_run(payload: RunCreate) -> RunResponse:
     run_id = str(uuid.uuid4())
     created_at = utc_now_iso()
+
+    try:
+        git_state = get_remote_git_state()
+        git_commit = payload.git_commit or git_state["commit"]
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Could not read slm_repo git state: {exc}",
+        )
 
     status = "created"
     slurm_job_id: str | None = None
     error_message: str | None = None
     log_path: str | None = None
     error_log_path: str | None = None
-
-    if payload.launch_now:
-        resolved_git_commit = payload.git_commit
-
-        if not resolved_git_commit:
-            resolved_git_commit, git_error = resolve_remote_training_git_commit()
-
-            if not resolved_git_commit:
-                raise HTTPException(
-                    status_code=400,
-                    detail=(
-                        "launch_now=true requires a valid training repo git commit, "
-                        f"but TAP could not resolve one from the remote training repo. Reason: {git_error}"
-                    ),
-                )
-
-        git_commit = resolved_git_commit
-    else:
-        git_commit = payload.git_commit or "unknown"
 
     if payload.launch_now:
         code, stdout, stderr, slurm_job_id = launch_training_run(
@@ -185,16 +130,6 @@ def create_run(payload: RunCreate) -> RunResponse:
             status = "failed"
             error_message = combined_output or f"Launch failed with exit code {code}"
 
-
-    config_snapshot = build_config_snapshot(
-        payload=payload,
-        git_commit=git_commit,
-        run_id=run_id,
-        created_at=created_at,
-        status=status,
-        slurm_job_id=slurm_job_id,
-    )
-        
     with get_db() as conn:
         conn.execute(
             """
@@ -205,14 +140,13 @@ def create_run(payload: RunCreate) -> RunResponse:
                 git_commit,
                 config_path,
                 config_overrides,
-                config_snapshot_json,
                 wandb_config_ref,
                 slurm_job_id,
                 wandb_run_id,
                 created_at,
                 error_message
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 run_id,
@@ -221,7 +155,6 @@ def create_run(payload: RunCreate) -> RunResponse:
                 git_commit,
                 payload.config_path,
                 json_dumps(payload.config_overrides),
-                json_dumps(config_snapshot),
                 payload.wandb_config_ref,
                 slurm_job_id,
                 payload.wandb_run_id,
@@ -229,75 +162,33 @@ def create_run(payload: RunCreate) -> RunResponse:
                 error_message,
             ),
         )
-
-        conn.execute(
-            """
-            INSERT INTO run_events (
-                event_id,
-                run_id,
-                event_type,
-                message,
-                old_status,
-                new_status,
-                created_at,
-                payload_json
-            )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                str(uuid.uuid4()),
-                run_id,
-                "RUN_CREATED",
-                "Run was created",
-                None,
-                status,
-                created_at,
-                json_dumps(
-                    {
-                        "name": payload.name,
-                        "config_path": payload.config_path,
-                        "launch_now": payload.launch_now,
-                        "slurm_job_id": slurm_job_id,
-                        "wandb_run_id": payload.wandb_run_id,
-                    }
-                ),
-            ),
+        create_run_event(
+            conn,
+            run_id=run_id,
+            event_type="RUN_CREATED",
+            message="Run created from slm_repo",
+            new_status=status,
+            payload={
+                "name": payload.name,
+                "config_path": payload.config_path,
+                "git_commit": git_commit,
+                "launch_now": payload.launch_now,
+            },
         )
 
         if slurm_job_id:
-
-            conn.execute(
-                """
-                INSERT INTO run_events (
-                    event_id,
-                    run_id,
-                    event_type,
-                    message,
-                    old_status,
-                    new_status,
-                    created_at,
-                    payload_json
-                )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    str(uuid.uuid4()),
-                    run_id,
-                    "SLURM_JOB_SUBMITTED",
-                    f"Slurm job {slurm_job_id} was submitted",
-                    "created",
-                    "queued",
-                    created_at,
-                    json_dumps(
-                        {
-                            "slurm_job_id": slurm_job_id,
-                            "log_path": log_path,
-                            "error_log_path": error_log_path,
-                        }
-                    ),
-                ),
+            create_run_event(
+                conn,
+                run_id=run_id,
+                event_type="SLURM_JOB_SUBMITTED",
+                message=f"Slurm job {slurm_job_id} submitted",
+                new_status=status,
+                payload={
+                    "slurm_job_id": slurm_job_id,
+                    "log_path": log_path,
+                    "error_log_path": error_log_path,
+                },
             )
-
             conn.execute(
                 """
                 INSERT INTO jobs (
@@ -335,13 +226,36 @@ def create_run(payload: RunCreate) -> RunResponse:
         git_commit=git_commit,
         config_path=payload.config_path,
         config_overrides=payload.config_overrides,
-        config_snapshot=config_snapshot,
         wandb_config_ref=payload.wandb_config_ref,
         slurm_job_id=slurm_job_id,
         wandb_run_id=payload.wandb_run_id,
         created_at=created_at,
         error_message=error_message,
     )
+
+
+@router.get("/runs/{run_id}/events")
+def list_run_events(run_id: str) -> list[dict[str, Any]]:
+    ensure_run_exists(run_id)
+
+    with get_db() as conn:
+        rows = conn.execute(
+            """
+            SELECT *
+            FROM run_events
+            WHERE run_id = ?
+            ORDER BY datetime(created_at) ASC
+            """,
+            (run_id,),
+        ).fetchall()
+
+    events = []
+    for row in rows:
+        item = dict(row)
+        item["payload"] = json_loads(item.get("payload_json"))
+        events.append(item)
+
+    return events
 
 @router.get("/runs")
 def list_runs() -> list[dict[str, Any]]:
@@ -358,8 +272,6 @@ def list_runs() -> list[dict[str, Any]]:
     for row in rows:
         item = dict(row)
         item["config_overrides"] = json_loads(item.get("config_overrides"))
-        item["config_snapshot"] = json_loads(item.get("config_snapshot_json"))
-        item.pop("config_snapshot_json", None)
         runs.append(item)
 
     return runs
@@ -369,10 +281,7 @@ def list_runs() -> list[dict[str, Any]]:
 def get_run(run_id: str) -> dict[str, Any]:
     item = ensure_run_exists(run_id)
     item["config_overrides"] = json_loads(item.get("config_overrides"))
-    item["config_snapshot"] = json_loads(item.get("config_snapshot_json"))
-    item.pop("config_snapshot_json", None)
     return item
-
 
 @router.post("/runs/{run_id}/refresh")
 def refresh_run(run_id: str) -> dict[str, Any]:
@@ -380,102 +289,127 @@ def refresh_run(run_id: str) -> dict[str, Any]:
     checked_at = utc_now_iso()
 
     slurm_job_id = run_row.get("slurm_job_id")
+    wandb_run_id = run_row.get("wandb_run_id")
 
-    if not slurm_job_id:
-        with get_db() as conn:
-            conn.execute(
-                """
-                UPDATE runs
-                SET last_checked_at = ?
-                WHERE run_id = ?
-                """,
-                (checked_at, run_id),
-            )
-
-            updated_run = conn.execute(
-                "SELECT * FROM runs WHERE run_id = ?",
-                (run_id,),
-            ).fetchone()
-
-        run_dict = dict(updated_run)
-        run_dict["config_overrides"] = json_loads(run_dict.get("config_overrides"))
-        run_dict["config_snapshot"] = json_loads(run_dict.get("config_snapshot_json"))
-        run_dict.pop("config_snapshot_json", None)
-
-        return {
-            "run": run_dict,
-            "job": None,
-            "sync": {
-                "checked_at": checked_at,
-                "message": "Run has no Slurm job ID, so no Slurm refresh was performed.",
-            },
-        }
-
-    job_snapshot = refresh_job_from_slurm(slurm_job_id)
-
-    old_status = run_row["status"]
-
-    new_status = derive_run_status(
-        current_status=old_status,
-        queue_state=job_snapshot["queue_state"],
-        execution_state=job_snapshot["execution_state"],
-        exit_status=job_snapshot["exit_status"],
-    )
+    job_snapshot = None
+    metrics_snapshot = None
+    wandb_snapshot = None
+    slurm_status = None
+    wandb_status = None
 
     with get_db() as conn:
-        existing_job = conn.execute(
-            "SELECT * FROM jobs WHERE job_id = ?",
-            (slurm_job_id,),
-        ).fetchone()
+        if slurm_job_id:
+            job_snapshot = refresh_job_from_slurm(slurm_job_id)
 
-        if existing_job:
-            conn.execute(
-                """
-                UPDATE jobs
-                SET queue_state = ?,
-                    execution_state = ?,
-                    node_info = ?,
-                    start_time = ?,
-                    end_time = ?,
-                    exit_status = ?
-                WHERE job_id = ?
-                """,
-                (
-                    job_snapshot["queue_state"],
-                    job_snapshot["execution_state"],
-                    job_snapshot["node_info"],
-                    job_snapshot["start_time"],
-                    job_snapshot["end_time"],
-                    job_snapshot["exit_status"],
-                    slurm_job_id,
-                ),
-            )
-        else:
-            conn.execute(
-                """
-                INSERT INTO jobs (
-                    job_id,
-                    run_id,
-                    queue_state,
-                    execution_state,
-                    node_info,
-                    start_time,
-                    end_time,
-                    exit_status
+            existing_job = conn.execute(
+                "SELECT * FROM jobs WHERE job_id = ?",
+                (slurm_job_id,),
+            ).fetchone()
+
+            if existing_job:
+                conn.execute(
+                    """
+                    UPDATE jobs
+                    SET queue_state = ?, execution_state = ?, node_info = ?,
+                        start_time = ?, end_time = ?, exit_status = ?
+                    WHERE job_id = ?
+                    """,
+                    (
+                        job_snapshot["queue_state"],
+                        job_snapshot["execution_state"],
+                        job_snapshot["node_info"],
+                        job_snapshot["start_time"],
+                        job_snapshot["end_time"],
+                        job_snapshot["exit_status"],
+                        slurm_job_id,
+                    ),
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    slurm_job_id,
-                    run_id,
-                    job_snapshot["queue_state"],
-                    job_snapshot["execution_state"],
-                    job_snapshot["node_info"],
-                    job_snapshot["start_time"],
-                    job_snapshot["end_time"],
-                    job_snapshot["exit_status"],
-                ),
+            else:
+                conn.execute(
+                    """
+                    INSERT INTO jobs (
+                        job_id,
+                        run_id,
+                        queue_state,
+                        execution_state,
+                        node_info,
+                        start_time,
+                        end_time,
+                        exit_status
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        slurm_job_id,
+                        run_id,
+                        job_snapshot["queue_state"],
+                        job_snapshot["execution_state"],
+                        job_snapshot["node_info"],
+                        job_snapshot["start_time"],
+                        job_snapshot["end_time"],
+                        job_snapshot["exit_status"],
+                    ),
+                )
+
+            slurm_status = derive_run_status(
+                current_status=run_row["status"],
+                queue_state=job_snapshot["queue_state"],
+                execution_state=job_snapshot["execution_state"],
+                exit_status=job_snapshot["exit_status"],
             )
+
+        if wandb_run_id:
+            try:
+                wandb_snapshot = get_run_snapshot(wandb_run_id)
+                wandb_status = wandb_snapshot.get("tap_status")
+                metrics = wandb_snapshot["metrics"]
+
+                metrics_snapshot = upsert_latest_metrics(
+                    conn,
+                    run_id=run_id,
+                    current_step=metrics["current_step"],
+                    current_epoch=metrics["current_epoch"],
+                    training_loss=metrics["training_loss"],
+                    validation_loss=metrics["validation_loss"],
+                    runtime=metrics["runtime"],
+                    learning_rate=metrics["learning_rate"],
+                )
+                insert_metric_history_from_latest(
+                    conn,
+                    run_id=run_id,
+                    current_step=metrics["current_step"],
+                    current_epoch=metrics["current_epoch"],
+                    training_loss=metrics["training_loss"],
+                    validation_loss=metrics["validation_loss"],
+                    runtime=metrics["runtime"],
+                    learning_rate=metrics["learning_rate"],
+                    source="wandb_summary",
+                )
+
+            except Exception as exc:
+                wandb_snapshot = {"error": str(exc)}
+                metrics_snapshot = None
+
+                create_run_event(
+                    conn,
+                    run_id=run_id,
+                    event_type="WANDB_SYNC_FAILED",
+                    message=f"W&B sync failed: {exc}",
+                    old_status=run_row["status"],
+                    new_status=None,
+                    payload={
+                        "wandb_run_id": wandb_run_id,
+                        "error": str(exc),
+                    },
+                )
+
+        new_status = reconcile_run_status(
+            current_status=run_row["status"],
+            slurm_status=slurm_status,
+            wandb_status=wandb_status,
+        )
+
+        old_status = run_row["status"]
 
         if new_status != old_status:
             create_run_event(
@@ -486,11 +420,10 @@ def refresh_run(run_id: str) -> dict[str, Any]:
                 old_status=old_status,
                 new_status=new_status,
                 payload={
+                    "slurm_status": slurm_status,
+                    "wandb_status": wandb_status,
                     "slurm_job_id": slurm_job_id,
-                    "queue_state": job_snapshot["queue_state"],
-                    "execution_state": job_snapshot["execution_state"],
-                    "exit_status": job_snapshot["exit_status"],
-                    "source": job_snapshot.get("source"),
+                    "wandb_run_id": wandb_run_id,
                 },
             )
 
@@ -509,24 +442,27 @@ def refresh_run(run_id: str) -> dict[str, Any]:
             (run_id,),
         ).fetchone()
 
-        updated_job = conn.execute(
-            "SELECT * FROM jobs WHERE job_id = ?",
-            (slurm_job_id,),
-        ).fetchone()
+        updated_job = None
+        if slurm_job_id:
+            job_row = conn.execute(
+                "SELECT * FROM jobs WHERE job_id = ?",
+                (slurm_job_id,),
+            ).fetchone()
+            updated_job = dict(job_row) if job_row else None
 
     run_dict = dict(updated_run)
     run_dict["config_overrides"] = json_loads(run_dict.get("config_overrides"))
-    run_dict["config_snapshot"] = json_loads(run_dict.get("config_snapshot_json"))
-    run_dict.pop("config_snapshot_json", None)  
 
     return {
         "run": run_dict,
-        "job": dict(updated_job) if updated_job else None,
+        "job": updated_job,
+        "metrics": metrics_snapshot,
         "sync": {
             "checked_at": checked_at,
-            "slurm_job_id": slurm_job_id,
-            "slurm_status": new_status,
-            "job_source": job_snapshot.get("source"),
+            "slurm_status": slurm_status,
+            "wandb_status": wandb_status,
+            "wandb_state": (wandb_snapshot or {}).get("wandb_state") if isinstance(wandb_snapshot, dict) else None,
+            "wandb_error": (wandb_snapshot or {}).get("error") if isinstance(wandb_snapshot, dict) else None,
         },
     }
 
@@ -560,6 +496,20 @@ def cancel_run(run_id: str) -> dict[str, str]:
             WHERE job_id = ?
             """,
             ("cancelled", "cancelled", slurm_job_id),
+        )
+
+        create_run_event(
+            conn,
+            run_id=run_id,
+            event_type="RUN_CANCELLED",
+            message=f"Run cancelled from TAP. Slurm job {slurm_job_id} was cancelled.",
+            old_status=run_row["status"],
+            new_status="cancelled",
+            payload={
+                "slurm_job_id": slurm_job_id,
+                "stdout": stdout,
+                "stderr": stderr,
+            },
         )
 
     return {"run_id": run_id, "status": "cancelled"}

@@ -11,11 +11,11 @@ class RunCreate(BaseModel):
     name: str
     git_commit: str | None = None
     config_path: str
-    config_overrides: dict[str, Any] | None = None
+    config_overrides: dict[str, Any] = Field(default_factory=dict)
     submit_script: str | None = None
     wandb_config_ref: str | None = None
     wandb_run_id: str | None = None
-    launch_now: bool = False
+    launch_now: bool = True
 
 
 class RunResponse(BaseModel):
@@ -24,14 +24,12 @@ class RunResponse(BaseModel):
     status: str
     git_commit: str
     config_path: str
-    config_overrides: dict[str, Any] | None = None
-    config_snapshot: dict[str, Any] | None = None
-    wandb_config_ref: str | None = None
-    slurm_job_id: str | None = None
-    wandb_run_id: str | None = None
+    config_overrides: dict[str, Any]
+    wandb_config_ref: str | None
+    slurm_job_id: str | None
+    wandb_run_id: str | None
     created_at: str
-    last_checked_at: str | None = None
-    error_message: str | None = None
+    error_message: str | None
 
 
 class JobUpdate(BaseModel):
@@ -60,23 +58,30 @@ class NotificationCreate(BaseModel):
     run_id: str | None = None
     job_id: str | None = None
 
+class LatestMetricsResponse(BaseModel):
+    run_id: str
+    current_step: int | None = None
+    current_epoch: int | None = None
+    training_loss: float | None = None
+    validation_loss: float | None = None
+    runtime: float | None = None
+    learning_rate: float | None = None
+    latest_metric_timestamp: str | None = None
 
-class MetricPointCreate(BaseModel):
-    step: int
+
+class MetricHistoryPointResponse(BaseModel):
+    metric_id: str
+    run_id: str
+    step: int | None = None
     epoch: int | None = None
     train_loss: float | None = None
     val_loss: float | None = None
     learning_rate: float | None = None
+    runtime_seconds: float | None = None
     tokens_seen: int | None = None
     samples_seen: int | None = None
-    runtime_seconds: float | None = None
     tokens_per_second: float | None = None
     gpu_memory_used: float | None = None
     gpu_utilization: float | None = None
-    source: str = "manual"
-
-
-class MetricPointResponse(MetricPointCreate):
-    metric_id: str
-    run_id: str
+    source: str
     created_at: str
