@@ -1,219 +1,210 @@
-# metric upsert/read logic
-"""Metric storage helpers for latest metric snapshots and metric history."""
-
-from __future__ import annotations
-
-import uuid
-from datetime import datetime, timezone
-from sqlite3 import Connection, Row
 from typing import Any
 
+from fastapi import APIRouter, HTTPException
 
-def utc_now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
+from app.db import get_db
+from app.schemas import (
+    LatestMetricsResponse,
+    MetricHistoryPointResponse,
+    MetricSnapshotUpsert,
+)
+from app.services.metrics import (
+    get_latest_metrics,
+    get_metric_history,
+    insert_metric_history_from_latest,
+    sync_wandb_metric_history,
+    upsert_latest_metrics,
+)
+from app.services.wandb_client import get_run_snapshot
+
+router = APIRouter(tags=["metrics"])
 
 
-def row_to_dict(row: Row | None) -> dict[str, Any] | None:
-    return dict(row) if row is not None else None
+def ensure_run_exists(run_id: str) -> None:
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT run_id FROM runs WHERE run_id = ?",
+            (run_id,),
+        ).fetchone()
+
+    if row is None:
+        raise HTTPException(status_code=404, detail=f"Run '{run_id}' not found")
 
 
-def upsert_latest_metrics(
-    conn: Connection,
-    *,
-    run_id: str,
-    current_step: int | None = None,
-    current_epoch: int | None = None,
-    training_loss: float | None = None,
-    validation_loss: float | None = None,
-    runtime: float | None = None,
-    learning_rate: float | None = None,
-    latest_metric_timestamp: str | None = None,
-) -> dict[str, Any]:
-    """Insert/update the latest metric snapshot for a run."""
+@router.put("/runs/{run_id}/metrics")
+def upsert_metrics(run_id: str, payload: MetricSnapshotUpsert) -> dict[str, Any]:
+    ensure_run_exists(run_id)
 
-    timestamp = latest_metric_timestamp or utc_now_iso()
-
-    conn.execute(
-        """
-        INSERT INTO metrics (
-            run_id,
-            current_step,
-            current_epoch,
-            training_loss,
-            validation_loss,
-            runtime,
-            learning_rate,
-            latest_metric_timestamp
+    with get_db() as conn:
+        latest = upsert_latest_metrics(
+            conn,
+            run_id=run_id,
+            current_step=payload.current_step,
+            current_epoch=payload.current_epoch,
+            training_loss=payload.training_loss,
+            validation_loss=payload.validation_loss,
+            runtime=payload.runtime,
+            learning_rate=payload.learning_rate,
+            latest_metric_timestamp=payload.latest_metric_timestamp,
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        ON CONFLICT(run_id) DO UPDATE SET
-            current_step = excluded.current_step,
-            current_epoch = excluded.current_epoch,
-            training_loss = excluded.training_loss,
-            validation_loss = excluded.validation_loss,
-            runtime = excluded.runtime,
-            learning_rate = excluded.learning_rate,
-            latest_metric_timestamp = excluded.latest_metric_timestamp
-        """,
-        (
-            run_id,
-            current_step,
-            current_epoch,
-            training_loss,
-            validation_loss,
-            runtime,
-            learning_rate,
-            timestamp,
-        ),
-    )
+        insert_metric_history_from_latest(
+            conn,
+            run_id=run_id,
+            current_step=payload.current_step,
+            current_epoch=payload.current_epoch,
+            training_loss=payload.training_loss,
+            validation_loss=payload.validation_loss,
+            runtime=payload.runtime,
+            learning_rate=payload.learning_rate,
+            source="manual",
+            created_at=payload.latest_metric_timestamp,
+        )
 
-    row = conn.execute(
-        "SELECT * FROM metrics WHERE run_id = ?",
-        (run_id,),
-    ).fetchone()
-    result = row_to_dict(row)
-    if result is None:
-        raise RuntimeError(f"Failed to upsert latest metrics for run '{run_id}'")
-    return result
+    return latest
 
 
-def insert_metric_history(
-    conn: Connection,
-    *,
-    run_id: str,
-    step: int | None = None,
-    epoch: int | None = None,
-    train_loss: float | None = None,
-    val_loss: float | None = None,
-    learning_rate: float | None = None,
-    runtime_seconds: float | None = None,
-    tokens_seen: int | None = None,
-    samples_seen: int | None = None,
-    tokens_per_second: float | None = None,
-    gpu_memory_used: float | None = None,
-    gpu_utilization: float | None = None,
-    source: str = "manual",
-    created_at: str | None = None,
-    metric_id: str | None = None,
-) -> dict[str, Any] | None:
-    """Insert one metric-history point.
+@router.get("/runs/{run_id}/metrics/latest", response_model=LatestMetricsResponse | None)
+def get_latest_run_metrics(run_id: str) -> dict[str, Any] | None:
+    ensure_run_exists(run_id)
 
-    Duplicates for the same run_id + step + source are ignored. If step is null,
-    SQLite allows multiple nulls in a unique index, which is acceptable for now.
+    with get_db() as conn:
+        return get_latest_metrics(conn, run_id)
+
+
+@router.get("/runs/{run_id}/metrics/history", response_model=list[MetricHistoryPointResponse])
+def get_run_metric_history(run_id: str) -> list[dict[str, Any]]:
+    ensure_run_exists(run_id)
+
+    with get_db() as conn:
+        return get_metric_history(conn, run_id)
+
+
+@router.get("/runs/{run_id}/metrics")
+def get_metrics(run_id: str) -> dict[str, Any]:
+    """Backward-compatible latest metrics endpoint."""
+
+    ensure_run_exists(run_id)
+
+    with get_db() as conn:
+        row = get_latest_metrics(conn, run_id)
+
+    if row is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No metrics found for run '{run_id}'",
+        )
+
+    return row
+
+
+@router.post("/runs/{run_id}/metrics/sync")
+def sync_run_metrics(run_id: str) -> dict[str, Any]:
+    """Preferred M3 metric sync endpoint.
+
+    Syncs W&B history into metric_history when a wandb_run_id is available.
+    Falls back to a clear 400 if the run has no W&B run attached.
     """
 
-    point_id = metric_id or str(uuid.uuid4())
-    timestamp = created_at or utc_now_iso()
+    ensure_run_exists(run_id)
 
-    conn.execute(
-        """
-        INSERT OR IGNORE INTO metric_history (
-            metric_id,
-            run_id,
-            step,
-            epoch,
-            train_loss,
-            val_loss,
-            learning_rate,
-            runtime_seconds,
-            tokens_seen,
-            samples_seen,
-            tokens_per_second,
-            gpu_memory_used,
-            gpu_utilization,
-            source,
-            created_at
+    with get_db() as conn:
+        run_row = conn.execute(
+            "SELECT * FROM runs WHERE run_id = ?",
+            (run_id,),
+        ).fetchone()
+
+    if run_row is None:
+        raise HTTPException(status_code=404, detail=f"Run '{run_id}' not found")
+
+    wandb_run_id = run_row["wandb_run_id"]
+    if not wandb_run_id:
+        raise HTTPException(
+            status_code=400,
+            detail="No wandb_run_id stored for this run",
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """,
-        (
-            point_id,
-            run_id,
-            step,
-            epoch,
-            train_loss,
-            val_loss,
-            learning_rate,
-            runtime_seconds,
-            tokens_seen,
-            samples_seen,
-            tokens_per_second,
-            gpu_memory_used,
-            gpu_utilization,
-            source,
-            timestamp,
-        ),
-    )
 
-    if step is not None:
-        row = conn.execute(
-            """
-            SELECT *
-            FROM metric_history
-            WHERE run_id = ? AND step = ? AND source = ?
-            ORDER BY datetime(created_at) ASC
-            LIMIT 1
-            """,
-            (run_id, step, source),
-        ).fetchone()
-    else:
-        row = conn.execute(
-            "SELECT * FROM metric_history WHERE metric_id = ?",
-            (point_id,),
+    try:
+        with get_db() as conn:
+            sync_result = sync_wandb_metric_history(
+                conn,
+                run_id=run_id,
+                wandb_run_id=wandb_run_id,
+            )
+            latest = get_latest_metrics(conn, run_id)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"W&B history sync failed: {str(exc)}")
+
+    return {
+        **sync_result,
+        "latest_metrics": latest,
+        "status": "ok",
+    }
+
+
+@router.post("/runs/{run_id}/sync-wandb")
+def sync_metrics_from_wandb(run_id: str) -> dict[str, Any]:
+    ensure_run_exists(run_id)
+
+    with get_db() as conn:
+        run_row = conn.execute(
+            "SELECT * FROM runs WHERE run_id = ?",
+            (run_id,),
         ).fetchone()
 
-    return row_to_dict(row)
+    if run_row is None:
+        raise HTTPException(status_code=404, detail=f"Run '{run_id}' not found")
 
+    wandb_run_id = run_row["wandb_run_id"]
+    if not wandb_run_id:
+        raise HTTPException(
+            status_code=400,
+            detail="No wandb_run_id stored for this run",
+        )
 
-def insert_metric_history_from_latest(
-    conn: Connection,
-    *,
-    run_id: str,
-    current_step: int | None = None,
-    current_epoch: int | None = None,
-    training_loss: float | None = None,
-    validation_loss: float | None = None,
-    runtime: float | None = None,
-    learning_rate: float | None = None,
-    source: str = "manual",
-    created_at: str | None = None,
-) -> dict[str, Any] | None:
-    """Convert latest-metric field names into metric-history field names."""
+    try:
+        snapshot = get_run_snapshot(wandb_run_id)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"W&B sync failed: {str(exc)}")
 
-    return insert_metric_history(
-        conn,
-        run_id=run_id,
-        step=current_step,
-        epoch=current_epoch,
-        train_loss=training_loss,
-        val_loss=validation_loss,
-        learning_rate=learning_rate,
-        runtime_seconds=runtime,
-        source=source,
-        created_at=created_at,
-    )
+    metrics = snapshot["metrics"]
 
+    with get_db() as conn:
+        updated_metrics = upsert_latest_metrics(
+            conn,
+            run_id=run_id,
+            current_step=metrics["current_step"],
+            current_epoch=metrics["current_epoch"],
+            training_loss=metrics["training_loss"],
+            validation_loss=metrics["validation_loss"],
+            runtime=metrics["runtime"],
+            learning_rate=metrics["learning_rate"],
+        )
+        history_point = insert_metric_history_from_latest(
+            conn,
+            run_id=run_id,
+            current_step=metrics["current_step"],
+            current_epoch=metrics["current_epoch"],
+            training_loss=metrics["training_loss"],
+            validation_loss=metrics["validation_loss"],
+            runtime=metrics["runtime"],
+            learning_rate=metrics["learning_rate"],
+            source="wandb_summary",
+        )
 
-def get_latest_metrics(conn: Connection, run_id: str) -> dict[str, Any] | None:
-    row = conn.execute(
-        "SELECT * FROM metrics WHERE run_id = ?",
-        (run_id,),
-    ).fetchone()
-    return row_to_dict(row)
+        current_status = run_row["status"]
+        new_status = snapshot["tap_status"]
 
+        if current_status != "cancelled":
+            conn.execute(
+                "UPDATE runs SET status = ? WHERE run_id = ?",
+                (new_status, run_id),
+            )
 
-def get_metric_history(conn: Connection, run_id: str) -> list[dict[str, Any]]:
-    rows = conn.execute(
-        """
-        SELECT *
-        FROM metric_history
-        WHERE run_id = ?
-        ORDER BY
-            step IS NULL,
-            step ASC,
-            datetime(created_at) ASC,
-            created_at ASC
-        """,
-        (run_id,),
-    ).fetchall()
-    return [dict(row) for row in rows]
+    return {
+        "run_id": run_id,
+        "wandb_run_id": wandb_run_id,
+        "wandb_state": snapshot["wandb_state"],
+        "wandb_url": snapshot["url"],
+        "metrics": updated_metrics,
+        "history_point": history_point,
+    }
