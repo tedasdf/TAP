@@ -15,9 +15,9 @@ import { EmptyState } from "@/components/shared/empty-state";
 import { LoadingState } from "@/components/shared/loading-state";
 import { useCancelRun, useRefreshRun, useRun, useRunEvents, useRunMetricHistory, useRunMetrics, useSyncWandb } from "@/lib/hooks/use-runs";
 import { useJob, useJobLogs } from "@/lib/hooks/use-jobs";
-import { ApiMetricHistoryPoint, ApiRun, ApiRunMetrics } from "@/lib/types/api";
+import { ApiMetricPoint, ApiRun, ApiRunMetrics } from "@/lib/types/api";
 
-function buildOverviewRun(run: ApiRun, metrics?: ApiRunMetrics | null) {
+function buildOverviewRun(run: ApiRun, metrics?: ApiRunMetrics) {
   return {
     id: run.run_id,
     name: run.name,
@@ -40,16 +40,15 @@ function buildOverviewRun(run: ApiRun, metrics?: ApiRunMetrics | null) {
   };
 }
 
-function buildMetricsSeries(history: ApiMetricHistoryPoint[]) {
-  return history
-    .filter((point) => typeof point.step === "number")
+function buildMetricsSeries(metricHistory?: ApiMetricPoint[]) {
+  return (metricHistory ?? [])
+    .filter((point) => point.step !== null && point.step !== undefined)
     .map((point) => ({
-      step: point.step as number,
-      trainingLoss: point.train_loss ?? null,
-      validationLoss: point.val_loss ?? null,
+      step: point.step,
+      trainingLoss: point.training_loss ?? null,
+      validationLoss: point.validation_loss ?? null,
       learningRate: point.learning_rate ?? null,
-    }))
-    .sort((a, b) => a.step - b.step);
+    }));
 }
 
 export default function RunDetailPage() {
@@ -87,7 +86,7 @@ export default function RunDetailPage() {
   }, [runQuery.data, metricsQuery.data]);
 
   const metricsSeries = useMemo(() => {
-    return buildMetricsSeries(metricHistoryQuery.data ?? []);
+    return buildMetricsSeries(metricHistoryQuery.data);
   }, [metricHistoryQuery.data]);
 
   const logsData = useMemo(() => {
@@ -115,13 +114,13 @@ export default function RunDetailPage() {
     try {
       await refreshRunMutation.mutateAsync(runId);
       await Promise.all([
-        runQuery.refetch(),
-        metricsQuery.refetch(),
-        metricHistoryQuery.refetch(),
-        eventsQuery.refetch(),
-        slurmJobId ? jobQuery.refetch() : Promise.resolve(),
-        slurmJobId ? jobLogsQuery.refetch() : Promise.resolve(),
-      ]);
+      runQuery.refetch(),
+      metricsQuery.refetch(),
+      metricHistoryQuery.refetch(),
+      eventsQuery.refetch(),
+      slurmJobId ? jobQuery.refetch() : Promise.resolve(),
+      slurmJobId ? jobLogsQuery.refetch() : Promise.resolve(),
+    ]);
     } catch {}
   }
 
@@ -129,7 +128,6 @@ export default function RunDetailPage() {
     if (!runId) return;
     try {
       await syncWandbMutation.mutateAsync(runId);
-      await Promise.all([metricsQuery.refetch(), metricHistoryQuery.refetch()]);
     } catch {}
   }
 
@@ -245,7 +243,7 @@ export default function RunDetailPage() {
               ) : (
                 <EmptyState
                   title="No metric history yet"
-                  description="This run has no real metric history points yet. Sync W&B or submit metrics to populate charts."
+                  description="This run has no real metric history yet. Sync W&B or upsert metric points before showing charts."
                 />
               ))}
 

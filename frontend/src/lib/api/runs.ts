@@ -1,5 +1,5 @@
 import { apiRequest } from "@/lib/api/client";
-import { ApiMetricHistoryPoint, ApiRun, ApiRunMetrics, CreateRunPayload } from "@/lib/types/api";
+import { ApiMetricPoint, ApiRun, ApiRunMetrics, CreateRunPayload } from "@/lib/types/api";
 
 export function getRuns() {
   return apiRequest<ApiRun[]>("/runs");
@@ -10,11 +10,11 @@ export function getRun(runId: string) {
 }
 
 export function getRunMetrics(runId: string) {
-  return apiRequest<ApiRunMetrics | null>(`/runs/${runId}/metrics/latest`);
+  return apiRequest<ApiRunMetrics>(`/runs/${runId}/metrics`);
 }
 
 export function getRunMetricHistory(runId: string) {
-  return apiRequest<ApiMetricHistoryPoint[]>(`/runs/${runId}/metrics/history`);
+  return apiRequest<ApiMetricPoint[]>(`/runs/${runId}/metrics/history`);
 }
 
 export function refreshRun(runId: string) {

@@ -1,20 +1,10 @@
 from typing import Any
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 
 from app.db import get_db
-from app.schemas import (
-    LatestMetricsResponse,
-    MetricHistoryPointResponse,
-    MetricSnapshotUpsert,
-)
-from app.services.metrics import (
-    get_latest_metrics,
-    get_metric_history,
-    insert_metric_history_from_latest,
-    sync_wandb_metric_history,
-    upsert_latest_metrics,
-)
+from app.schemas import MetricSnapshotUpsert
+from app.services.metrics import upsert_metric_snapshot
 from app.services.wandb_client import get_run_snapshot
 
 router = APIRouter(tags=["metrics"])
@@ -35,59 +25,27 @@ def ensure_run_exists(run_id: str) -> None:
 def upsert_metrics(run_id: str, payload: MetricSnapshotUpsert) -> dict[str, Any]:
     ensure_run_exists(run_id)
 
-    with get_db() as conn:
-        latest = upsert_latest_metrics(
-            conn,
-            run_id=run_id,
-            current_step=payload.current_step,
-            current_epoch=payload.current_epoch,
-            training_loss=payload.training_loss,
-            validation_loss=payload.validation_loss,
-            runtime=payload.runtime,
-            learning_rate=payload.learning_rate,
-            latest_metric_timestamp=payload.latest_metric_timestamp,
-        )
-
-        insert_metric_history_from_latest(
-            conn,
-            run_id=run_id,
-            current_step=payload.current_step,
-            current_epoch=payload.current_epoch,
-            training_loss=payload.training_loss,
-            validation_loss=payload.validation_loss,
-            runtime=payload.runtime,
-            learning_rate=payload.learning_rate,
-            source="manual",
-            created_at=payload.latest_metric_timestamp,
-        )
-
-    return latest
-
-
-@router.get("/runs/{run_id}/metrics/latest", response_model=LatestMetricsResponse | None)
-def get_latest_run_metrics(run_id: str) -> dict[str, Any] | None:
-    ensure_run_exists(run_id)
+    metrics = payload.model_dump() if hasattr(payload, "model_dump") else payload.dict()
+    metrics["source"] = "manual"
 
     with get_db() as conn:
-        return get_latest_metrics(conn, run_id)
+        row = upsert_metric_snapshot(conn, run_id, metrics)
 
+    if row is None:
+        raise HTTPException(status_code=500, detail="Metric upsert failed")
 
-@router.get("/runs/{run_id}/metrics/history", response_model=list[MetricHistoryPointResponse])
-def get_run_metric_history(run_id: str) -> list[dict[str, Any]]:
-    ensure_run_exists(run_id)
-
-    with get_db() as conn:
-        return get_metric_history(conn, run_id)
+    return row
 
 
 @router.get("/runs/{run_id}/metrics")
 def get_metrics(run_id: str) -> dict[str, Any]:
-    """Backward-compatible latest metrics endpoint."""
-
     ensure_run_exists(run_id)
 
     with get_db() as conn:
-        row = get_latest_metrics(conn, run_id)
+        row = conn.execute(
+            "SELECT * FROM metrics WHERE run_id = ?",
+            (run_id,),
+        ).fetchone()
 
     if row is None:
         raise HTTPException(
@@ -95,59 +53,41 @@ def get_metrics(run_id: str) -> dict[str, Any]:
             detail=f"No metrics found for run '{run_id}'",
         )
 
-    return row
+    return dict(row)
 
 
-@router.post("/runs/{run_id}/metrics/sync")
-def sync_run_metrics(run_id: str) -> dict[str, Any]:
-    """Preferred M3 metric sync endpoint.
-
-    Syncs W&B history into metric_history when a wandb_run_id is available.
-    """
-
+@router.get("/runs/{run_id}/metrics/history")
+def get_metric_history(
+    run_id: str,
+    limit: int = Query(default=500, ge=1, le=10_000),
+) -> list[dict[str, Any]]:
     ensure_run_exists(run_id)
 
     with get_db() as conn:
-        run_row = conn.execute(
-            "SELECT * FROM runs WHERE run_id = ?",
-            (run_id,),
-        ).fetchone()
+        rows = conn.execute(
+            """
+            SELECT
+                step,
+                epoch,
+                training_loss,
+                validation_loss,
+                runtime,
+                learning_rate,
+                source,
+                created_at
+            FROM metric_points
+            WHERE run_id = ?
+            ORDER BY step ASC, created_at ASC
+            LIMIT ?
+            """,
+            (run_id, limit),
+        ).fetchall()
 
-    if run_row is None:
-        raise HTTPException(status_code=404, detail=f"Run '{run_id}' not found")
-
-    wandb_run_id = run_row["wandb_run_id"]
-    if not wandb_run_id:
-        raise HTTPException(
-            status_code=400,
-            detail="No wandb_run_id stored for this run",
-        )
-
-    try:
-        with get_db() as conn:
-            sync_result = sync_wandb_metric_history(
-                conn,
-                run_id=run_id,
-                wandb_run_id=wandb_run_id,
-            )
-            latest = get_latest_metrics(conn, run_id)
-    except Exception as exc:
-        raise HTTPException(
-            status_code=500,
-            detail=f"W&B history sync failed: {str(exc)}",
-        )
-
-    return {
-        **sync_result,
-        "latest_metrics": latest,
-        "status": "ok",
-    }
+    return [dict(row) for row in rows]
 
 
 @router.post("/runs/{run_id}/sync-wandb")
 def sync_metrics_from_wandb(run_id: str) -> dict[str, Any]:
-    """Backward-compatible W&B summary sync endpoint."""
-
     ensure_run_exists(run_id)
 
     with get_db() as conn:
@@ -171,31 +111,11 @@ def sync_metrics_from_wandb(run_id: str) -> dict[str, Any]:
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"W&B sync failed: {str(exc)}")
 
-    metrics = snapshot["metrics"]
+    metrics = dict(snapshot["metrics"])
+    metrics["source"] = "wandb"
 
     with get_db() as conn:
-        updated_metrics = upsert_latest_metrics(
-            conn,
-            run_id=run_id,
-            current_step=metrics["current_step"],
-            current_epoch=metrics["current_epoch"],
-            training_loss=metrics["training_loss"],
-            validation_loss=metrics["validation_loss"],
-            runtime=metrics["runtime"],
-            learning_rate=metrics["learning_rate"],
-        )
-
-        history_point = insert_metric_history_from_latest(
-            conn,
-            run_id=run_id,
-            current_step=metrics["current_step"],
-            current_epoch=metrics["current_epoch"],
-            training_loss=metrics["training_loss"],
-            validation_loss=metrics["validation_loss"],
-            runtime=metrics["runtime"],
-            learning_rate=metrics["learning_rate"],
-            source="wandb_summary",
-        )
+        updated_metrics = upsert_metric_snapshot(conn, run_id, metrics)
 
         current_status = run_row["status"]
         new_status = snapshot["tap_status"]
@@ -212,5 +132,4 @@ def sync_metrics_from_wandb(run_id: str) -> dict[str, Any]:
         "wandb_state": snapshot["wandb_state"],
         "wandb_url": snapshot["url"],
         "metrics": updated_metrics,
-        "history_point": history_point,
     }

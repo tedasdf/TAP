@@ -13,7 +13,7 @@ from fastapi import HTTPException, APIRouter
 from app.db import get_db
 from app.services.jobs import refresh_job_from_slurm, derive_run_status, reconcile_run_status
 from app.services.wandb_client import get_run_snapshot
-from app.services.metrics import insert_metric_history_from_latest, upsert_latest_metrics
+from app.services.metrics import upsert_metric_snapshot
 from app.schemas import RunCreate, RunResponse
 from app.services.launcher import (
     launch_training_run,
@@ -364,27 +364,9 @@ def refresh_run(run_id: str) -> dict[str, Any]:
                 wandb_status = wandb_snapshot.get("tap_status")
                 metrics = wandb_snapshot["metrics"]
 
-                metrics_snapshot = upsert_latest_metrics(
-                    conn,
-                    run_id=run_id,
-                    current_step=metrics["current_step"],
-                    current_epoch=metrics["current_epoch"],
-                    training_loss=metrics["training_loss"],
-                    validation_loss=metrics["validation_loss"],
-                    runtime=metrics["runtime"],
-                    learning_rate=metrics["learning_rate"],
-                )
-                insert_metric_history_from_latest(
-                    conn,
-                    run_id=run_id,
-                    current_step=metrics["current_step"],
-                    current_epoch=metrics["current_epoch"],
-                    training_loss=metrics["training_loss"],
-                    validation_loss=metrics["validation_loss"],
-                    runtime=metrics["runtime"],
-                    learning_rate=metrics["learning_rate"],
-                    source="wandb_summary",
-                )
+                metric_payload = dict(metrics)
+                metric_payload["source"] = "wandb"
+                metrics_snapshot = upsert_metric_snapshot(conn, run_id, metric_payload)
 
             except Exception as exc:
                 wandb_snapshot = {"error": str(exc)}

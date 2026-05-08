@@ -34,27 +34,27 @@ function mapSystemStatusToItems(status?: ApiSystemStatus): SystemItem[] {
   return [
     {
       label: "Backend",
-      status: normalizeStatus(status?.backend),
+      status: normalizeStatus(status?.status ?? status?.backend),
       note: "API health and responsiveness",
     },
     {
       label: "M3",
-      status: normalizeStatus(status?.m3),
+      status: normalizeStatus(status?.checks?.ssh ?? status?.m3),
       note: "Remote execution machine connectivity",
     },
     {
       label: "Slurm",
-      status: normalizeStatus(status?.slurm),
+      status: normalizeStatus(status?.checks?.ssh ?? status?.slurm),
       note: "Scheduler availability and queue access",
     },
     {
       label: "Database",
-      status: normalizeStatus(status?.database),
+      status: normalizeStatus(status?.checks?.database ?? status?.database),
       note: "SQLite availability and persistence",
     },
     {
       label: "W&B",
-      status: normalizeStatus(status?.wandb),
+      status: normalizeStatus(status?.checks?.wandb ?? status?.wandb),
       note: "Experiment tracking and metric sync",
     },
   ];
@@ -105,14 +105,14 @@ export default function SystemPage() {
 
               <div className="mt-4 space-y-3 text-sm">
                 <div className="flex justify-between gap-4">
-                  <span className="text-zinc-500">Last Sync</span>
-                  <span className="text-right text-zinc-200">{data?.last_sync ?? "—"}</span>
+                  <span className="text-zinc-500">Runs tracked</span>
+                  <span className="text-right text-zinc-200">{data?.run_count ?? "—"}</span>
                 </div>
 
                 <div className="flex justify-between gap-4">
-                  <span className="text-zinc-500">Last Job Launch</span>
+                  <span className="text-zinc-500">Active runs</span>
                   <span className="text-right text-zinc-200">
-                    {data?.last_job_launch ?? "—"}
+                    {data?.active_run_count ?? "—"}
                   </span>
                 </div>
               </div>

@@ -7,7 +7,6 @@ from app.db import get_db
 from app.schemas import JobUpdate
 from app.services.jobs import derive_run_status
 from app.services.launcher import run_ssh_command
-from app.services.run_events import create_run_event
 
 
 router = APIRouter(tags=["jobs"])
@@ -77,38 +76,13 @@ def update_job(job_id: str, payload: JobUpdate) -> dict[str, Any]:
             "SELECT status FROM runs WHERE run_id = ?",
             (updated["run_id"],),
         ).fetchone()
-        
-        if run_row is None:
-            raise HTTPException(
-                status_code=500,
-                detail=f"Job '{job_id}' points to missing run '{updated['run_id']}'",
-            )
-
-        old_run_status = run_row["status"]
 
         new_run_status = derive_run_status(
-            current_status=old_run_status,
+            current_status=run_row["status"],
             queue_state=updated["queue_state"],
             execution_state=updated["execution_state"],
             exit_status=updated["exit_status"],
         )
-
-        if new_run_status != old_run_status:
-            create_run_event(
-                conn,
-                run_id=updated["run_id"],
-                event_type="STATUS_CHANGED",
-                message=f"Run status changed from {old_run_status} to {new_run_status}",
-                old_status=old_run_status,
-                new_status=new_run_status,
-                payload={
-                    "source": "PATCH /jobs/{job_id}",
-                    "job_id": job_id,
-                    "queue_state": updated["queue_state"],
-                    "execution_state": updated["execution_state"],
-                    "exit_status": updated["exit_status"],
-                },
-            )
 
         conn.execute(
             "UPDATE runs SET status = ? WHERE run_id = ?",

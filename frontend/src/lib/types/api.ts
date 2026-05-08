@@ -51,6 +51,17 @@ export type ApiSystemStatus = {
   last_job_launch?: string | null;
 };
 
+export type ApiMetricPoint = {
+  step: number;
+  epoch?: number | null;
+  training_loss?: number | null;
+  validation_loss?: number | null;
+  runtime?: number | string | null;
+  learning_rate?: number | null;
+  source?: string | null;
+  created_at?: string | null;
+};
+
 export type ApiRunMetrics = {
   current_step?: number | null;
   current_epoch?: number | null;
@@ -59,25 +70,6 @@ export type ApiRunMetrics = {
   runtime?: number | string | null;
   learning_rate?: number | null;
   latest_metric_timestamp?: string | null;
-};
-
-
-export type ApiMetricHistoryPoint = {
-  metric_id: string;
-  run_id: string;
-  step?: number | null;
-  epoch?: number | null;
-  train_loss?: number | null;
-  val_loss?: number | null;
-  learning_rate?: number | null;
-  runtime_seconds?: number | null;
-  tokens_seen?: number | null;
-  samples_seen?: number | null;
-  tokens_per_second?: number | null;
-  gpu_memory_used?: number | null;
-  gpu_utilization?: number | null;
-  source: string;
-  created_at: string;
 };
 
 export type CreateRunPayload = {

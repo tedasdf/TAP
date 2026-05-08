@@ -57,31 +57,3 @@ class NotificationCreate(BaseModel):
     message: str
     run_id: str | None = None
     job_id: str | None = None
-
-class LatestMetricsResponse(BaseModel):
-    run_id: str
-    current_step: int | None = None
-    current_epoch: int | None = None
-    training_loss: float | None = None
-    validation_loss: float | None = None
-    runtime: float | None = None
-    learning_rate: float | None = None
-    latest_metric_timestamp: str | None = None
-
-
-class MetricHistoryPointResponse(BaseModel):
-    metric_id: str
-    run_id: str
-    step: int | None = None
-    epoch: int | None = None
-    train_loss: float | None = None
-    val_loss: float | None = None
-    learning_rate: float | None = None
-    runtime_seconds: float | None = None
-    tokens_seen: int | None = None
-    samples_seen: int | None = None
-    tokens_per_second: float | None = None
-    gpu_memory_used: float | None = None
-    gpu_utilization: float | None = None
-    source: str
-    created_at: str

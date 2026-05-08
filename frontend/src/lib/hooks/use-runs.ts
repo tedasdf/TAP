@@ -81,10 +81,9 @@ export function useSyncWandb() {
     mutationFn: (runId: string) => syncWandb(runId),
     onSuccess: (_data, runId) => {
       queryClient.invalidateQueries({ queryKey: ["runs"] });
-      if (typeof runId === "string") {
-        queryClient.invalidateQueries({ queryKey: ["runs", runId, "metrics"] });
-        queryClient.invalidateQueries({ queryKey: ["runs", runId, "metrics", "history"] });
-      }
+      queryClient.invalidateQueries({ queryKey: ["runs", runId] });
+      queryClient.invalidateQueries({ queryKey: ["runs", runId, "metrics"] });
+      queryClient.invalidateQueries({ queryKey: ["runs", runId, "metrics", "history"] });
     },
   });
 }

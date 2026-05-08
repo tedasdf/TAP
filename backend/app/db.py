@@ -98,26 +98,20 @@ def init_db() -> None:
             """
         )
 
-
-
         conn.execute(
             """
-            CREATE TABLE IF NOT EXISTS metric_history (
-                metric_id TEXT PRIMARY KEY,
+            CREATE TABLE IF NOT EXISTS metric_points (
+                point_id TEXT PRIMARY KEY,
                 run_id TEXT NOT NULL,
-                step INTEGER,
+                step INTEGER NOT NULL,
                 epoch INTEGER,
-                train_loss REAL,
-                val_loss REAL,
+                training_loss REAL,
+                validation_loss REAL,
+                runtime REAL,
                 learning_rate REAL,
-                runtime_seconds REAL,
-                tokens_seen INTEGER,
-                samples_seen INTEGER,
-                tokens_per_second REAL,
-                gpu_memory_used REAL,
-                gpu_utilization REAL,
-                source TEXT NOT NULL,
+                source TEXT NOT NULL DEFAULT 'manual',
                 created_at TEXT NOT NULL,
+                UNIQUE(run_id, step, source),
                 FOREIGN KEY (run_id) REFERENCES runs(run_id) ON DELETE CASCADE
             )
             """
@@ -125,30 +119,8 @@ def init_db() -> None:
 
         conn.execute(
             """
-            CREATE UNIQUE INDEX IF NOT EXISTS idx_metric_history_unique_run_step_source
-            ON metric_history(run_id, step, source)
-            WHERE step IS NOT NULL
-            """
-        )
-
-        conn.execute(
-            """
-            CREATE INDEX IF NOT EXISTS idx_metric_history_run_id
-            ON metric_history(run_id)
-            """
-        )
-
-        conn.execute(
-            """
-            CREATE INDEX IF NOT EXISTS idx_metric_history_run_step
-            ON metric_history(run_id, step)
-            """
-        )
-
-        conn.execute(
-            """
-            CREATE INDEX IF NOT EXISTS idx_metric_history_run_created_at
-            ON metric_history(run_id, created_at)
+            CREATE INDEX IF NOT EXISTS idx_metric_points_run_step
+            ON metric_points(run_id, step)
             """
         )
 
