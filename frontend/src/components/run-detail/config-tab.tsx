@@ -21,7 +21,9 @@ export function ConfigTab({
       <div className="rounded-2xl border border-zinc-800 bg-zinc-900/70 p-4">
         <h3 className="text-sm font-semibold text-white">Config Overrides</h3>
         <pre className="mt-3 whitespace-pre-wrap break-words text-sm text-zinc-300">
-          {configOverrides || "No overrides"}
+          {configOverrides
+            ? JSON.stringify(configOverrides, null, 2)
+            : "No overrides"}
         </pre>
       </div>
 
