@@ -2,7 +2,8 @@ import sqlite3
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Iterator
-
+from datetime import datetime, timezone
+from uuid import uuid4
 from app.config import settings
 
 
@@ -129,6 +130,8 @@ def init_db() -> None:
             CREATE TABLE IF NOT EXISTS notifications (
                 notification_id TEXT PRIMARY KEY,
                 event_type TEXT NOT NULL,
+                severity TEXT NOT NULL DEFAULT 'info',
+                title TEXT NOT NULL DEFAULT 'Notification',
                 message TEXT NOT NULL,
                 run_id TEXT,
                 job_id TEXT,
@@ -139,3 +142,72 @@ def init_db() -> None:
             )
             """
         )
+
+        existing_notification_columns = {
+            row["name"]
+            for row in conn.execute("PRAGMA table_info(notifications)").fetchall()
+        }
+
+        if "severity" not in existing_notification_columns:
+            conn.execute(
+                "ALTER TABLE notifications ADD COLUMN severity TEXT NOT NULL DEFAULT 'info'"
+            )
+
+        if "title" not in existing_notification_columns:
+            conn.execute(
+                "ALTER TABLE notifications ADD COLUMN title TEXT NOT NULL DEFAULT 'Notification'"
+            )
+
+def create_notification(
+    *,
+    event_type: str,
+    severity: str,
+    title: str,
+    message: str,
+    run_id: str | None = None,
+    job_id: str | None = None,
+) -> sqlite3.Row:
+    notification_id = str(uuid4())
+    timestamp = datetime.now(timezone.utc).isoformat()
+
+    with get_db() as conn:
+        conn.execute(
+            """
+            INSERT INTO notifications (
+                notification_id,
+                event_type,
+                severity,
+                title,
+                message,
+                run_id,
+                job_id,
+                timestamp,
+                read_state
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)
+            """,
+            (
+                notification_id,
+                event_type,
+                severity,
+                title,
+                message,
+                run_id,
+                job_id,
+                timestamp,
+            ),
+        )
+
+        notification = conn.execute(
+            """
+            SELECT *
+            FROM notifications
+            WHERE notification_id = ?
+            """,
+            (notification_id,),
+        ).fetchone()
+
+        if notification is None:
+            raise RuntimeError("Failed to create notification")
+
+        return notification
