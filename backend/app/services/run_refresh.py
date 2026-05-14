@@ -537,3 +537,16 @@ def refresh_run_by_id(run_id: str) -> dict[str, Any]:
             ),
         },
     }
+
+def list_active_run_ids() -> list[str]:
+    with get_db() as conn:
+        rows = conn.execute(
+            """
+            SELECT run_id
+            FROM runs
+            WHERE status IN ('created', 'queued', 'running', 'unknown')
+            ORDER BY datetime(created_at) ASC
+            """
+        ).fetchall()
+
+    return [row["run_id"] for row in rows]

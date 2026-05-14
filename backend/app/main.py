@@ -10,6 +10,7 @@ from app.api.jobs import router as jobs_router
 from app.api.metrics import router as metrics_router
 from app.api.notifications import router as notifications_router
 from app.api.system import router as system_router
+from app.services.background_worker import start_background_worker, stop_background_worker
 
 DB_PATH = Path(os.environ.get("TAP_DB_PATH", "tap.db"))
 
@@ -27,10 +28,14 @@ app.add_middleware(
 )
 
 @app.on_event("startup")
-def on_startup() -> None:
+async def startup():
     init_db()
+    start_background_worker()
 
-
+@app.on_event("shutdown")
+async def shutdown():
+    await stop_background_worker()
+    
 app.include_router(system_router)
 app.include_router(runs_router)
 app.include_router(jobs_router)

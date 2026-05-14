@@ -30,3 +30,16 @@ def test_system_status_endpoint(monkeypatch, tmp_path):
     assert "run_count" in data
     assert "active_run_count" in data
     assert "notification_count" in data
+
+    assert "background_worker" in data
+
+    worker = data["background_worker"]
+
+    assert "enabled" in worker
+    assert "running" in worker
+    assert "interval_seconds" in worker
+    assert "last_cycle_started_at" in worker
+    assert "last_cycle_finished_at" in worker
+    assert "last_cycle_run_count" in worker
+    assert "last_cycle_error_count" in worker
+    assert "last_error" in worker

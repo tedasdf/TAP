@@ -10,6 +10,7 @@ from app.services.wandb_client import get_run_snapshot
 from datetime import datetime, timezone
 from typing import Any
 import os
+from app.services.background_worker import get_background_worker_status
 
 router = APIRouter(tags=["system"])
 
@@ -188,5 +189,6 @@ def system_status() -> dict[str, Any]:
             "slurm": slurm_status,
             "wandb": wandb_status,
         },
+        "background_worker": get_background_worker_status(),
         **counts,
     }
