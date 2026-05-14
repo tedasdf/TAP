@@ -41,6 +41,7 @@ def json_loads(value: str | None) -> dict[str, Any]:
         return {}
     return json.loads(value)
 
+
 def build_config_snapshot(
     *,
     payload: Any,
@@ -91,6 +92,7 @@ def build_config_snapshot(
         },
     }
 
+
 def ensure_run_exists(run_id: str) -> dict[str, Any]:
     with get_db() as conn:
         row = conn.execute(
@@ -102,6 +104,7 @@ def ensure_run_exists(run_id: str) -> dict[str, Any]:
         raise HTTPException(status_code=404, detail=f"Run '{run_id}' not found")
 
     return dict(row)
+
 
 def create_run_event(
     conn,
@@ -138,6 +141,7 @@ def create_run_event(
             json_dumps(payload),
         ),
     )
+
 
 def create_notification_row(
     conn,
@@ -176,6 +180,7 @@ def create_notification_row(
         ),
     )
 
+
 def metric_to_float(value: Any) -> float | None:
     if value is None:
         return None
@@ -210,6 +215,7 @@ def get_best_validation_loss(conn, run_id: str) -> float | None:
 
     return metric_to_float(row["best_validation_loss"])
 
+
 def notification_already_exists(
     conn,
     *,
@@ -230,6 +236,7 @@ def notification_already_exists(
     ).fetchone()
 
     return row is not None
+
 
 def create_metric_notification_once(
     conn,
@@ -258,6 +265,7 @@ def create_metric_notification_once(
         run_id=run_id,
         job_id=job_id,
     )
+
 
 def create_metric_alert_notifications(
     conn,
@@ -320,6 +328,7 @@ def create_metric_alert_notifications(
             job_id=job_id,
         )
 
+
 def create_run_status_notification(
     conn,
     *,
@@ -380,7 +389,54 @@ def create_run_status_notification(
             job_id=job_id,
         )
         return
-    
+
+
+def read_remote_log_file(path: str | None, *, tail_lines: int = 300) -> dict[str, Any]:
+    if not path:
+        return {
+            "path": None,
+            "exists": False,
+            "content": "",
+            "error": "No log path stored",
+        }
+
+    safe_path = shlex.quote(path)
+    safe_tail_lines = max(1, min(tail_lines, 2000))
+
+    command = (
+        f"if [ -f {safe_path} ]; then "
+        f"tail -n {safe_tail_lines} {safe_path}; "
+        f"else "
+        f"echo '__TAP_LOG_FILE_MISSING__'; "
+        f"fi"
+    )
+
+    code, stdout, stderr = run_ssh_command(command)
+
+    if code != 0:
+        return {
+            "path": path,
+            "exists": False,
+            "content": "",
+            "error": stderr or f"Failed to read log file {path}",
+        }
+
+    if "__TAP_LOG_FILE_MISSING__" in stdout:
+        return {
+            "path": path,
+            "exists": False,
+            "content": "",
+            "error": "Log file does not exist yet",
+        }
+
+    return {
+        "path": path,
+        "exists": True,
+        "content": stdout,
+        "error": None,
+    }
+
+
 @router.post("/runs", response_model=RunResponse)
 def create_run(payload: RunCreate) -> RunResponse:
     run_id = str(uuid.uuid4())
@@ -526,6 +582,7 @@ def create_run(payload: RunCreate) -> RunResponse:
         error_message=error_message,
     )
 
+
 @router.get("/runs/{run_id}/events")
 def list_run_events(run_id: str) -> list[dict[str, Any]]:
     ensure_run_exists(run_id)
@@ -548,6 +605,74 @@ def list_run_events(run_id: str) -> list[dict[str, Any]]:
         events.append(item)
 
     return events
+
+
+@router.get("/runs/{run_id}/logs")
+def get_run_logs(run_id: str, tail_lines: int = 300) -> dict[str, Any]:
+    run = ensure_run_exists(run_id)
+    slurm_job_id = run.get("slurm_job_id")
+
+    if not slurm_job_id:
+        return {
+            "run_id": run_id,
+            "job_id": None,
+            "stdout": {
+                "path": None,
+                "exists": False,
+                "content": "",
+                "error": "No Slurm job ID associated with this run",
+            },
+            "stderr": {
+                "path": None,
+                "exists": False,
+                "content": "",
+                "error": "No Slurm job ID associated with this run",
+            },
+        }
+
+    with get_db() as conn:
+        job = conn.execute(
+            """
+            SELECT *
+            FROM jobs
+            WHERE job_id = ?
+            """,
+            (slurm_job_id,),
+        ).fetchone()
+
+    if job is None:
+        return {
+            "run_id": run_id,
+            "job_id": slurm_job_id,
+            "stdout": {
+                "path": None,
+                "exists": False,
+                "content": "",
+                "error": "No job row found for this run",
+            },
+            "stderr": {
+                "path": None,
+                "exists": False,
+                "content": "",
+                "error": "No job row found for this run",
+            },
+        }
+
+    job_dict = dict(job)
+
+    return {
+        "run_id": run_id,
+        "job_id": slurm_job_id,
+        "stdout": read_remote_log_file(
+            job_dict.get("log_path"),
+            tail_lines=tail_lines,
+        ),
+        "stderr": read_remote_log_file(
+            job_dict.get("error_log_path"),
+            tail_lines=tail_lines,
+        ),
+    }
+
 
 @router.get("/runs")
 def list_runs() -> list[dict[str, Any]]:
@@ -574,6 +699,7 @@ def get_run(run_id: str) -> dict[str, Any]:
     item = ensure_run_exists(run_id)
     item["config_overrides"] = json_loads(item.get("config_overrides"))
     return item
+
 
 @router.post("/runs/{run_id}/refresh")
 def refresh_run(run_id: str) -> dict[str, Any]:
@@ -670,7 +796,7 @@ def refresh_run(run_id: str) -> dict[str, Any]:
                     previous_best_validation_loss=previous_best_validation_loss,
                     job_id=slurm_job_id,
                 )
-                
+
             except Exception as exc:
                 wandb_snapshot = {"error": str(exc)}
                 metrics_snapshot = None
@@ -768,6 +894,7 @@ def refresh_run(run_id: str) -> dict[str, Any]:
             "wandb_error": (wandb_snapshot or {}).get("error") if isinstance(wandb_snapshot, dict) else None,
         },
     }
+
 
 @router.post("/runs/{run_id}/cancel")
 def cancel_run(run_id: str) -> dict[str, str]:

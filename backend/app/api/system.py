@@ -6,16 +6,105 @@ from app.config import settings
 from app.db import get_db
 from app.services.launcher import run_ssh_command
 from app.services.wandb_client import get_run_snapshot
+
+from datetime import datetime, timezone
+from typing import Any
+import os
+
 router = APIRouter(tags=["system"])
 
 
-@router.get("/health")
-def health() -> dict[str, str]: # placeholder function for now 
+def utc_now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def check_database() -> str:
+    try:
+        with get_db() as conn:
+            conn.execute("SELECT 1").fetchone()
+        return "ok"
+    except Exception:
+        return "error"
+
+
+def check_m3_ssh() -> str:
+    try:
+        code, stdout, stderr = run_ssh_command("echo tap-health-ok")
+
+        if code == 0 and "tap-health-ok" in stdout:
+            return "connected"
+
+        return "error"
+    except Exception:
+        return "error"
+
+
+def check_slurm() -> str:
+    try:
+        code, stdout, stderr = run_ssh_command(
+            "command -v squeue >/dev/null 2>&1 && squeue --version >/dev/null 2>&1"
+        )
+
+        if code == 0:
+            return "connected"
+
+        return "error"
+    except Exception:
+        return "error"
+
+
+def check_wandb() -> str:
+    # Keep this lightweight for now.
+    # This checks whether W&B is configured, not whether the network API is reachable.
+    if os.environ.get("WANDB_API_KEY"):
+        return "connected"
+
+    return "unknown"
+
+
+def get_run_counts() -> dict[str, int]:
+    with get_db() as conn:
+        run_count = conn.execute(
+            "SELECT COUNT(*) AS count FROM runs"
+        ).fetchone()["count"]
+
+        active_run_count = conn.execute(
+            """
+            SELECT COUNT(*) AS count
+            FROM runs
+            WHERE status IN ('created', 'queued', 'running')
+            """
+        ).fetchone()["count"]
+
+        notification_count = conn.execute(
+            "SELECT COUNT(*) AS count FROM notifications"
+        ).fetchone()["count"]
+
     return {
-        "status": "ok",
-        "service": "tap-api",
+        "run_count": run_count,
+        "active_run_count": active_run_count,
+        "notification_count": notification_count,
     }
 
+@router.get("/health")
+def get_health() -> dict[str, Any]:
+    health: dict[str, Any] = {
+        "backend": "ok",
+        "database": "unknown",
+        "timestamp": utc_now_iso(),
+    }
+
+    try:
+        with get_db() as conn:
+            conn.execute("SELECT 1").fetchone()
+
+        health["database"] = "ok"
+
+    except Exception as exc:
+        health["database"] = "error"
+        health["database_error"] = str(exc)
+
+    return health
 
 def check_database() -> str:
     try:
@@ -64,16 +153,19 @@ def derive_overall_status(database: str, ssh: str, wandb: str) -> str:
 def system_status() -> dict[str, Any]:
     database_status = check_database()
     ssh_status = check_ssh()
+    slurm_status = check_slurm() if ssh_status in ("connected", "ok") else "unknown"
     wandb_status = check_wandb()
 
-    with get_db() as conn:
-        run_count = conn.execute("SELECT COUNT(*) FROM runs").fetchone()[0]
-        active_run_count = conn.execute(
-            "SELECT COUNT(*) FROM runs WHERE status IN ('created', 'queued', 'running')"
-        ).fetchone()[0]
-        notification_count = conn.execute(
-            "SELECT COUNT(*) FROM notifications"
-        ).fetchone()[0]
+    counts = {
+        "run_count": 0,
+        "active_run_count": 0,
+        "notification_count": 0,
+    }
+
+    try:
+        counts = get_run_counts()
+    except Exception:
+        database_status = "error"
 
     overall_status = derive_overall_status(
         database=database_status,
@@ -84,12 +176,17 @@ def system_status() -> dict[str, Any]:
     return {
         "service": "tap-api",
         "status": overall_status,
+        "backend": "ok",
+        "database": database_status,
+        "m3": ssh_status,
+        "slurm": slurm_status,
+        "wandb": wandb_status,
+        "timestamp": utc_now_iso(),
         "checks": {
             "database": database_status,
             "ssh": ssh_status,
+            "slurm": slurm_status,
             "wandb": wandb_status,
         },
-        "run_count": run_count,
-        "active_run_count": active_run_count,
-        "notification_count": notification_count,
+        **counts,
     }

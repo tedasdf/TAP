@@ -11,7 +11,6 @@ from app.api.metrics import router as metrics_router
 from app.api.notifications import router as notifications_router
 from app.api.system import router as system_router
 
-
 DB_PATH = Path(os.environ.get("TAP_DB_PATH", "tap.db"))
 
 app = FastAPI()
