@@ -1,4 +1,3 @@
-#!/usr/bin/env bash
 set -e
 
 ZIP_NAME="tap_sources_$(date +%Y%m%d_%H%M%S).zip"

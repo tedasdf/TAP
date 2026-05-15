@@ -46,3 +46,13 @@ export type AttentionItem = {
   severity: "warning" | "error";
   runId?: string;
 };
+
+export type NotificationView = {
+  id: string;
+  title: string;
+  message: string;
+  severity: string;
+  isRead: boolean;
+  createdAtLabel: string;
+  runId?: string;
+};

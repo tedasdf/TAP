@@ -8,14 +8,15 @@ import { AppShell } from "@/components/layout/app-shell";
 import { DetailTabs, RunDetailTab } from "@/components/run-detail/detail-tabs";
 import { OverviewTab } from "@/components/run-detail/overview-tab";
 import { MetricsTab } from "@/components/run-detail/metrics-tab";
-import { LogsTab } from "@/components/run-detail/logs-tab";
 import { JobTab } from "@/components/run-detail/job-tab";
 import { ConfigTab } from "@/components/run-detail/config-tab";
+import { RunEventsTimeline } from "@/components/run-detail/RunEventsTimeline";
 import { EmptyState } from "@/components/shared/empty-state";
 import { LoadingState } from "@/components/shared/loading-state";
 import { useCancelRun, useRefreshRun, useRun, useRunEvents, useRunMetricHistory, useRunMetrics, useSyncWandb } from "@/lib/hooks/use-runs";
-import { useJob, useJobLogs } from "@/lib/hooks/use-jobs";
+import { useJob } from "@/lib/hooks/use-jobs";
 import { ApiMetricPoint, ApiRun, ApiRunMetrics } from "@/lib/types/api";
+import { RunLogsTab } from "@/components/run-detail/RunLogsTab";
 
 function buildOverviewRun(run: ApiRun, metrics?: ApiRunMetrics) {
   return {
@@ -65,7 +66,6 @@ export default function RunDetailPage() {
 
   const slurmJobId = runQuery.data?.slurm_job_id;
   const jobQuery = useJob(slurmJobId);
-  const jobLogsQuery = useJobLogs(slurmJobId);
 
   const cancelRunMutation = useCancelRun();
   const refreshRunMutation = useRefreshRun();
@@ -75,8 +75,7 @@ export default function RunDetailPage() {
     runQuery.isLoading ||
     (activeTab === "overview" && metricsQuery.isLoading) ||
     (activeTab === "metrics" && metricHistoryQuery.isLoading) ||
-    (activeTab === "job" && !!slurmJobId && jobQuery.isLoading) ||
-    (activeTab === "logs" && !!slurmJobId && jobLogsQuery.isLoading);
+    (activeTab === "job" && !!slurmJobId && jobQuery.isLoading);
 
   const hasError = runQuery.isError;
 
@@ -89,13 +88,6 @@ export default function RunDetailPage() {
     return buildMetricsSeries(metricHistoryQuery.data);
   }, [metricHistoryQuery.data]);
 
-  const logsData = useMemo(() => {
-    const payload = jobLogsQuery.data;
-    if (!payload) return [];
-    if (Array.isArray(payload.logs) && payload.logs.length > 0) return payload.logs;
-    if (Array.isArray(payload.lines) && payload.lines.length > 0) return payload.lines;
-    return [...(payload.stdout ?? []), ...(payload.stderr ?? [])];
-  }, [jobLogsQuery.data]);
 
   async function handleCancel() {
     if (!runId) return;
@@ -119,7 +111,6 @@ export default function RunDetailPage() {
       metricHistoryQuery.refetch(),
       eventsQuery.refetch(),
       slurmJobId ? jobQuery.refetch() : Promise.resolve(),
-      slurmJobId ? jobLogsQuery.refetch() : Promise.resolve(),
     ]);
     } catch {}
   }
@@ -194,34 +185,7 @@ export default function RunDetailPage() {
             </p>
           </div>
 
-          {events.length === 0 ? (
-            <p className="text-sm text-zinc-400">
-              No events recorded yet.
-            </p>
-          ) : (
-            <div className="space-y-3">
-              {events.map((event) => (
-                <div key={event.event_id} className="rounded-lg border p-3">
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="font-medium">{event.event_type}</div>
-                    <div className="text-xs text-zinc-400">
-                      {new Date(event.created_at).toLocaleString()}
-                    </div>
-                  </div>
-
-                  <div className="mt-1 text-sm text-zinc-400">
-                    {event.message}
-                  </div>
-
-                  {event.old_status || event.new_status ? (
-                    <div className="mt-2 text-xs text-zinc-400">
-                      {event.old_status ?? "none"} → {event.new_status ?? "none"}
-                    </div>
-                  ) : null}
-                </div>
-              ))}
-            </div>
-          )}
+          <RunEventsTimeline events={events} />
         </section>
 
         <DetailTabs activeTab={activeTab} onChange={setActiveTab} />
@@ -247,22 +211,9 @@ export default function RunDetailPage() {
                 />
               ))}
 
-            {activeTab === "logs" &&
-              (slurmJobId ? (
-                logsData.length > 0 ? (
-                  <LogsTab logs={logsData} />
-                ) : (
-                  <EmptyState
-                    title="No logs available"
-                    description="No log lines were returned for this job yet."
-                  />
-                )
-              ) : (
-                <EmptyState
-                  title="No job logs"
-                  description="This run does not have a Slurm job ID yet."
-                />
-            ))}
+            {activeTab === "logs" && (
+              <RunLogsTab runId={runQuery.data.run_id} />
+            )}
 
             {activeTab === "job" &&
               (slurmJobId ? (

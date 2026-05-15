@@ -21,17 +21,12 @@ export type ApiRun = {
   latest_metric_timestamp?: string | null;
 };
 
-export type ApiNotification = {
-  notification_id: string;
-  event_type: string;
-  message: string;
-  run_id?: string | null;
-  job_id?: string | null;
-  timestamp: string;
-  read_state: boolean;
-};
-
 export type ApiSystemStatus = {
+  backend?: string;
+  database?: string;
+  timestamp?: string;
+  database_error?: string;
+
   service?: string;
   status?: string;
   checks?: {
@@ -39,16 +34,18 @@ export type ApiSystemStatus = {
     ssh?: string;
     wandb?: string;
   };
+
   run_count?: number;
   active_run_count?: number;
   notification_count?: number;
-  backend?: string;
+
   m3?: string;
   slurm?: string;
-  database?: string;
   wandb?: string;
   last_sync?: string | null;
   last_job_launch?: string | null;
+
+  background_worker?: ApiBackgroundWorkerStatus;
 };
 
 export type ApiMetricPoint = {
@@ -80,4 +77,52 @@ export type CreateRunPayload = {
   wandb_config_ref?: string;
   wandb_run_id?: string;
   launch_now?: boolean;
+};
+
+export type ApiNotification = {
+  notification_id: string;
+  event_type: string;
+  severity: "info" | "success" | "warning" | "error" | string;
+  title: string;
+  message: string;
+  run_id?: string | null;
+  job_id?: string | null;
+  timestamp: string;
+  read_state: number;
+};
+
+export type ApiRunLogFile = {
+  path: string | null;
+  exists: boolean;
+  content: string;
+  error: string | null;
+};
+
+export type ApiRunLogs = {
+  run_id: string;
+  job_id: string | null;
+  stdout: ApiRunLogFile;
+  stderr: ApiRunLogFile;
+};
+
+export type RunEvent = {
+  event_id: string;
+  run_id: string;
+  event_type: string;
+  message: string;
+  old_status?: string | null;
+  new_status?: string | null;
+  created_at: string;
+  payload?: Record<string, unknown>;
+};
+
+export type ApiBackgroundWorkerStatus = {
+  enabled: boolean;
+  running: boolean;
+  interval_seconds: number;
+  last_cycle_started_at?: string | null;
+  last_cycle_finished_at?: string | null;
+  last_cycle_run_count: number;
+  last_cycle_error_count: number;
+  last_error?: string | null;
 };

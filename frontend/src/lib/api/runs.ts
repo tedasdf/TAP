@@ -1,5 +1,14 @@
 import { apiRequest } from "@/lib/api/client";
+import type { ApiRunLogs, RunEvent } from "@/lib/types/api";
 import { ApiMetricPoint, ApiRun, ApiRunMetrics, CreateRunPayload } from "@/lib/types/api";
+
+
+
+export function getRunLogs(runId: string, tailLines = 300) {
+  return apiRequest<ApiRunLogs>(
+    `/runs/${runId}/logs?tail_lines=${tailLines}`,
+  );
+}
 
 export function getRuns() {
   return apiRequest<ApiRun[]>("/runs");
@@ -41,17 +50,6 @@ export function createRun(payload: CreateRunPayload) {
     body: JSON.stringify(payload),
   });
 }
-
-export type RunEvent = {
-  event_id: string;
-  run_id: string;
-  event_type: string;
-  message: string;
-  old_status?: string | null;
-  new_status?: string | null;
-  created_at: string;
-  payload?: Record<string, unknown>;
-};
 
 export async function getRunEvents(runId: string): Promise<RunEvent[]> {
   return apiRequest<RunEvent[]>(`/runs/${runId}/events`);
