@@ -154,4 +154,4 @@ def launch_training_run(
     combined_output = "\n".join(part for part in [stdout, stderr] if part)
     job_id = parse_slurm_job_id(combined_output)
 
-    return code, stdout, stderr, job_ids
+    return code, stdout, stderr, job_id
