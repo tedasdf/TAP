@@ -168,6 +168,7 @@ def init_db() -> None:
             conn.execute(
                 "ALTER TABLE runs ADD COLUMN config_snapshot_json TEXT"
             )
+        
 
 def create_notification(
     *,

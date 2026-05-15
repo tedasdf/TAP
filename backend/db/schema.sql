@@ -99,3 +99,15 @@ ON metric_history(run_id, step);
 
 CREATE INDEX IF NOT EXISTS idx_metric_history_run_created_at
 ON metric_history(run_id, created_at);
+
+
+CREATE TABLE IF NOT EXISTS metric_sync_status (
+    run_id TEXT PRIMARY KEY,
+    source TEXT,
+    status TEXT NOT NULL,
+    last_started_at TEXT,
+    last_finished_at TEXT,
+    error_message TEXT,
+    points_synced INTEGER NOT NULL DEFAULT 0,
+    FOREIGN KEY (run_id) REFERENCES runs(run_id) ON DELETE CASCADE
+);
