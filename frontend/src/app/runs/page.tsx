@@ -22,7 +22,7 @@ function mapRunToCardView(run: ApiRun): RunCardView {
     currentEpoch: run.current_epoch ?? undefined,
     trainingLoss: run.training_loss ?? undefined,
     validationLoss: run.validation_loss ?? undefined,
-    runtime: run.runtime ?? undefined,
+    runtime: run.runtime == null ? undefined : String(run.runtime),
     errorMessage: run.error_message ?? undefined,
     slurmJobId: run.slurm_job_id ?? undefined,
   };
@@ -65,8 +65,10 @@ export default function RunsPage() {
           failed: 0,
           running: 1,
           queued: 2,
-          completed: 3,
-          cancelled: 4,
+          created: 3,
+          completed: 4,
+          cancelled: 5,
+          unknown: 6,
         };
 
         const statusDiff = priority[a.status] - priority[b.status];

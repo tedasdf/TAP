@@ -12,19 +12,25 @@ function mapNotificationToAlertView(notification: ApiNotification): AlertView {
   const rawType = notification.event_type.toLowerCase();
 
   let type: AlertView["type"] = "info";
-  if (rawType.includes("fail") || rawType.includes("error")) type = "error";
-  else if (rawType.includes("warn")) type = "warning";
-  else if (rawType.includes("complete") || rawType.includes("success")) type = "success";
+
+  if (rawType.includes("fail") || rawType.includes("error")) {
+    type = "error";
+  } else if (rawType.includes("warn")) {
+    type = "warning";
+  } else if (rawType.includes("complete") || rawType.includes("success")) {
+    type = "success";
+  }
 
   return {
     id: notification.notification_id,
     type,
-    title: notification.event_type.replace(/[-_]/g, " "),
+    title: notification.title ?? notification.event_type.replace(/[-_]/g, " "),
     message: notification.message,
     timestamp: notification.timestamp,
-    read: notification.read_state,
+    read: Boolean(notification.read_state),
   };
 }
+
 
 export default function AlertsPage() {
   const { data, isLoading, isError } = useNotifications();

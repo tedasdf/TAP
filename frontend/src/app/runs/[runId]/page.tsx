@@ -17,8 +17,16 @@ import { useCancelRun, useRefreshRun, useRun, useRunEvents, useRunMetricHistory,
 import { useJob } from "@/lib/hooks/use-jobs";
 import { ApiMetricPoint, ApiRun, ApiRunMetrics } from "@/lib/types/api";
 import { RunLogsTab } from "@/components/run-detail/RunLogsTab";
+import { RunCardView } from "@/lib/types/view";
 
-function buildOverviewRun(run: ApiRun, metrics?: ApiRunMetrics) {
+function buildOverviewRun(run: ApiRun, metrics?: ApiRunMetrics): RunCardView & {
+  wandbRunId?: string | null;
+  gitCommit?: string | null;
+  createdAt?: string;
+  latestMetricTimestamp?: string;
+  learningRate?: number;
+  configOverrides?: string;
+} {
   return {
     id: run.run_id,
     name: run.name,
@@ -29,14 +37,22 @@ function buildOverviewRun(run: ApiRun, metrics?: ApiRunMetrics) {
     trainingLoss: metrics?.training_loss ?? run.training_loss ?? undefined,
     validationLoss: metrics?.validation_loss ?? run.validation_loss ?? undefined,
     learningRate: metrics?.learning_rate ?? run.learning_rate ?? undefined,
-    runtime: metrics?.runtime ?? run.runtime ?? undefined,
+    runtime:
+      metrics?.runtime == null && run.runtime == null
+        ? undefined
+        : String(metrics?.runtime ?? run.runtime),
     slurmJobId: run.slurm_job_id ?? undefined,
     wandbRunId: run.wandb_run_id ?? undefined,
     gitCommit: run.git_commit ?? undefined,
     createdAt: run.created_at,
     latestMetricTimestamp:
       metrics?.latest_metric_timestamp ?? run.latest_metric_timestamp ?? undefined,
-    configOverrides: run.config_overrides ?? undefined,
+    configOverrides:
+      run.config_overrides == null
+        ? undefined
+        : typeof run.config_overrides === "string"
+          ? run.config_overrides
+          : JSON.stringify(run.config_overrides, null, 2),
     errorMessage: run.error_message ?? undefined,
   };
 }
@@ -250,6 +266,7 @@ export default function RunDetailPage() {
                 configOverrides={runQuery.data.config_overrides ?? undefined}
                 gitCommit={runQuery.data.git_commit ?? undefined}
                 wandbRunId={runQuery.data.wandb_run_id ?? undefined}
+                configSnapshot={runQuery.data.config_snapshot ?? undefined}
               />
             )}
           </>

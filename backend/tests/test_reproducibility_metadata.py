@@ -33,6 +33,9 @@ def test_config_snapshot_contains_core_run_metadata():
     assert snapshot["name"] == "m2-repro-test"
     assert snapshot["git_commit"] == "abc123commit"
     assert snapshot["config_path"] == "configs/train/test.yaml"
+    assert snapshot["config_file"]["path"] == "configs/train/test.yaml"
+    assert snapshot["config_file"]["content"] is None
+    assert snapshot["config_file"]["error"] == "Config file was not snapshotted"
     assert snapshot["config_overrides"]["trainer.max_steps"] == "10"
     assert snapshot["submit_script"] == "scripts/slurm/test1.slurm"
     assert snapshot["launch_now"] is True
@@ -124,6 +127,15 @@ def test_create_run_resolves_head_to_actual_commit_and_stores_snapshot(monkeypat
         "app.api.runs.get_remote_git_state",
         lambda: {"commit": "actualsha123", "branch": "main", "dirty": False},
     )
+    monkeypatch.setattr(
+        "app.api.runs.read_remote_config_file",
+        lambda config_path: {
+            "path": config_path,
+            "source": "remote_ssh",
+            "content": "training:\n  max_steps: 10\n",
+            "error": None,
+        },
+    )
 
     response = client.post(
         "/runs",
@@ -146,6 +158,12 @@ def test_create_run_resolves_head_to_actual_commit_and_stores_snapshot(monkeypat
     assert created_run["config_snapshot"]["config_overrides"] == {
         "training.max_steps": "10"
     }
+    assert created_run["config_snapshot"]["config_file"] == {
+        "path": "configs/train/local_smoke.yaml",
+        "source": "remote_ssh",
+        "content": "training:\n  max_steps: 10\n",
+        "error": None,
+    }
 
     run_id = created_run["run_id"]
     get_response = client.get(f"/runs/{run_id}")
@@ -155,3 +173,42 @@ def test_create_run_resolves_head_to_actual_commit_and_stores_snapshot(monkeypat
     assert stored_run["git_commit"] == "actualsha123"
     assert stored_run["config_snapshot"]["run_id"] == run_id
     assert stored_run["config_snapshot"]["git_commit"] == "actualsha123"
+
+
+def test_create_run_stores_config_snapshot_error_without_blocking_run(monkeypatch, tmp_path):
+    from tests.test_metrics import make_client
+
+    client = make_client(monkeypatch, tmp_path)
+
+    monkeypatch.setattr(
+        "app.api.runs.get_remote_git_state",
+        lambda: {"commit": "actualsha456", "branch": "main", "dirty": False},
+    )
+    monkeypatch.setattr(
+        "app.api.runs.read_remote_config_file",
+        lambda config_path: {
+            "path": config_path,
+            "source": "remote_ssh",
+            "content": None,
+            "error": "Config file not found",
+        },
+    )
+
+    response = client.post(
+        "/runs",
+        json={
+            "name": "m2-missing-config-test",
+            "config_path": "configs/train/missing.yaml",
+            "launch_now": False,
+        },
+    )
+
+    assert response.status_code == 200
+
+    created_run = response.json()
+    config_file = created_run["config_snapshot"]["config_file"]
+
+    assert config_file["path"] == "configs/train/missing.yaml"
+    assert config_file["source"] == "remote_ssh"
+    assert config_file["content"] is None
+    assert config_file["error"] == "Config file not found"

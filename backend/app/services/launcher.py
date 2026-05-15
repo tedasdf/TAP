@@ -33,6 +33,59 @@ printf '{{"commit":"%s","branch":"%s","dirty":%s}}' "$COMMIT" "$BRANCH" "$DIRTY"
 
     return json.loads(stdout)
 
+
+def read_remote_config_file(config_path: str) -> dict[str, Any]:
+    """Read a config file from the configured remote repo for reproducibility snapshots.
+
+    This is intentionally best-effort. Callers should store the returned error
+    rather than fail run creation when the config cannot be read.
+    """
+    normalized_path = config_path.strip()
+
+    if not normalized_path:
+        return {
+            "path": config_path,
+            "source": "remote_ssh",
+            "content": None,
+            "error": "No config path provided",
+        }
+
+    if normalized_path.startswith("/") or ".." in normalized_path.split("/"):
+        return {
+            "path": config_path,
+            "source": "remote_ssh",
+            "content": None,
+            "error": "Config path must be relative to the remote repo",
+        }
+
+    script = f"""
+set -e
+cd {shlex.quote(M3_REPO_PATH)}
+CONFIG_PATH={shlex.quote(normalized_path)}
+if [ ! -f "$CONFIG_PATH" ]; then
+  echo "Config file not found: $CONFIG_PATH" >&2
+  exit 44
+fi
+cat "$CONFIG_PATH"
+""".strip()
+
+    code, stdout, stderr = run_ssh_command(f"bash -lc {shlex.quote(script)}")
+
+    if code != 0:
+        return {
+            "path": config_path,
+            "source": "remote_ssh",
+            "content": None,
+            "error": stderr or f"Failed to read remote config file {config_path}",
+        }
+
+    return {
+        "path": config_path,
+        "source": "remote_ssh",
+        "content": stdout,
+        "error": None,
+    }
+
 def parse_slurm_job_id(output: str) -> str | None:
     match = re.search(r"Submitted batch job\s+(\d+)", output)
     if match:
@@ -101,4 +154,4 @@ def launch_training_run(
     combined_output = "\n".join(part for part in [stdout, stderr] if part)
     job_id = parse_slurm_job_id(combined_output)
 
-    return code, stdout, stderr, job_id
+    return code, stdout, stderr, job_ids

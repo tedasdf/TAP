@@ -57,7 +57,7 @@ function mapRunToCardView(run: ApiRun): RunCardView {
     currentEpoch: run.current_epoch ?? undefined,
     trainingLoss: run.training_loss ?? undefined,
     validationLoss: run.validation_loss ?? undefined,
-    runtime: run.runtime ?? undefined,
+    runtime: run.runtime == null ? undefined : String(run.runtime),
     errorMessage: run.error_message ?? undefined,
     slurmJobId: run.slurm_job_id ?? undefined,
   };
@@ -77,7 +77,7 @@ function mapNotificationToAlertView(notification: ApiNotification): AlertView {
     title: notification.event_type.replace(/[-_]/g, " "),
     message: notification.message,
     timestamp: notification.timestamp,
-    read: notification.read_state,
+    read: Boolean(notification.read_state),
   };
 }
 

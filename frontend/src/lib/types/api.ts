@@ -83,13 +83,13 @@ export type CreateRunPayload = {
 export type ApiNotification = {
   notification_id: string;
   event_type: string;
-  severity: "info" | "success" | "warning" | "error" | string;
+  severity: string;
   title: string;
   message: string;
+  timestamp: string;
+  read_state: boolean | number;
   run_id?: string | null;
   job_id?: string | null;
-  timestamp: string;
-  read_state: number;
 };
 
 export type ApiRunLogFile = {

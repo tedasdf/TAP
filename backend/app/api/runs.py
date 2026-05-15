@@ -22,6 +22,7 @@ from app.services.launcher import (
     build_remote_error_log_path,
     run_ssh_command,
     get_remote_git_state,
+    read_remote_config_file,
 )
 from app.config import settings
 from app.services.run_refresh import RunNotFoundError, refresh_run_by_id
@@ -69,6 +70,7 @@ def build_config_snapshot(
     created_at: str,
     status: str,
     slurm_job_id: str | None = None,
+    config_file_snapshot: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     config_overrides = payload.config_overrides or {}
 
@@ -81,12 +83,21 @@ def build_config_snapshot(
     if payload.submit_script:
         launch_command = f"sbatch {payload.submit_script}"
 
+    if config_file_snapshot is None:
+        config_file_snapshot = {
+            "path": payload.config_path,
+            "source": None,
+            "content": None,
+            "error": "Config file was not snapshotted",
+        }
+
     return {
         "run_id": run_id,
         "name": payload.name,
         "git_commit": git_commit,
         "config_path": payload.config_path,
         "config_overrides": config_overrides,
+        "config_file": config_file_snapshot,
         "submit_script": payload.submit_script,
         "launch_now": payload.launch_now,
         "status_at_creation": status,
@@ -501,6 +512,8 @@ def create_run(payload: RunCreate) -> RunResponse:
             status = "failed"
             error_message = combined_output or f"Launch failed with exit code {code}"
 
+    config_file_snapshot = read_remote_config_file(payload.config_path)
+
     config_snapshot = build_config_snapshot(
         payload=payload,
         git_commit=git_commit,
@@ -508,6 +521,7 @@ def create_run(payload: RunCreate) -> RunResponse:
         created_at=created_at,
         status=status,
         slurm_job_id=slurm_job_id,
+        config_file_snapshot=config_file_snapshot,
     )
 
     with get_db() as conn:
