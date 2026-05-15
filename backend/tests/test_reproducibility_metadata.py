@@ -114,3 +114,44 @@ def test_config_snapshot_handles_missing_optional_metadata():
     assert snapshot["launch_metadata"]["submitted_at"] is None
     assert snapshot["data_references"]["dataset"] is None
     assert snapshot["data_references"]["tokenizer"] is None
+
+def test_create_run_resolves_head_to_actual_commit_and_stores_snapshot(monkeypatch, tmp_path):
+    from tests.test_metrics import make_client
+
+    client = make_client(monkeypatch, tmp_path)
+
+    monkeypatch.setattr(
+        "app.api.runs.get_remote_git_state",
+        lambda: {"commit": "actualsha123", "branch": "main", "dirty": False},
+    )
+
+    response = client.post(
+        "/runs",
+        json={
+            "name": "m2-create-run-test",
+            "git_commit": "HEAD",
+            "config_path": "configs/train/local_smoke.yaml",
+            "config_overrides": {"training.max_steps": "10"},
+            "wandb_run_id": "wandb-test-123",
+            "launch_now": False,
+        },
+    )
+
+    assert response.status_code == 200
+
+    created_run = response.json()
+    assert created_run["git_commit"] == "actualsha123"
+    assert created_run["config_snapshot"]["git_commit"] == "actualsha123"
+    assert created_run["config_snapshot"]["config_path"] == "configs/train/local_smoke.yaml"
+    assert created_run["config_snapshot"]["config_overrides"] == {
+        "training.max_steps": "10"
+    }
+
+    run_id = created_run["run_id"]
+    get_response = client.get(f"/runs/{run_id}")
+
+    assert get_response.status_code == 200
+    stored_run = get_response.json()
+    assert stored_run["git_commit"] == "actualsha123"
+    assert stored_run["config_snapshot"]["run_id"] == run_id
+    assert stored_run["config_snapshot"]["git_commit"] == "actualsha123"

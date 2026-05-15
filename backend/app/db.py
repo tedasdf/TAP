@@ -44,7 +44,8 @@ def init_db() -> None:
                 wandb_run_id TEXT,
                 created_at TEXT NOT NULL,
                 last_checked_at TEXT,
-                error_message TEXT
+                error_message TEXT,
+                config_snapshot_json TEXT
             )
             """
         )
@@ -156,6 +157,16 @@ def init_db() -> None:
         if "title" not in existing_notification_columns:
             conn.execute(
                 "ALTER TABLE notifications ADD COLUMN title TEXT NOT NULL DEFAULT 'Notification'"
+            )
+
+        existing_run_columns = {
+            row["name"]
+            for row in conn.execute("PRAGMA table_info(runs)").fetchall()
+        }
+
+        if "config_snapshot_json" not in existing_run_columns:
+            conn.execute(
+                "ALTER TABLE runs ADD COLUMN config_snapshot_json TEXT"
             )
 
 def create_notification(

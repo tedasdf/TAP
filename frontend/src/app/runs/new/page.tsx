@@ -10,7 +10,7 @@ export default function CreateRunPage() {
   const createRunMutation = useCreateRun();
 
   const [name, setName] = useState("");
-  const [gitCommit, setGitCommit] = useState("HEAD");
+  const [gitCommit, setGitCommit] = useState("");
   const [configPath, setConfigPath] = useState("");
   const [configOverrides, setConfigOverrides] = useState("");
   const [wandbConfigRef, setWandbConfigRef] = useState("");
@@ -58,7 +58,7 @@ export default function CreateRunPage() {
 
       const createdRun = await createRunMutation.mutateAsync({
         name: name.trim(),
-        git_commit: gitCommit.trim() || "HEAD",
+        git_commit: gitCommit.trim() || undefined,
         config_path: configPath.trim(),
         config_overrides:
           Object.keys(parsedOverrides).length > 0 ? parsedOverrides : undefined,
@@ -114,7 +114,7 @@ export default function CreateRunPage() {
               value={gitCommit}
               onChange={(e) => setGitCommit(e.target.value)}
               className="w-full rounded-xl border border-zinc-800 bg-black px-3 py-2.5 text-sm text-white outline-none"
-              placeholder="HEAD"
+              placeholder="optional — backend resolves current commit"
               disabled={isSubmitting}
             />
           </div>

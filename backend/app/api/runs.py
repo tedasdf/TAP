@@ -43,6 +43,24 @@ def json_loads(value: str | None) -> dict[str, Any]:
     return json.loads(value)
 
 
+def resolve_git_commit_from_payload(payload_git_commit: str | None, remote_commit: str) -> str:
+    """Resolve UI-friendly git refs into the actual commit stored by TAP."""
+    requested = (payload_git_commit or "").strip()
+
+    if not requested or requested.upper() == "HEAD":
+        return remote_commit
+
+    return requested
+
+
+def parse_run_row(row: dict[str, Any]) -> dict[str, Any]:
+    item = dict(row)
+    item["config_overrides"] = json_loads(item.get("config_overrides"))
+    item["config_snapshot"] = json_loads(item.get("config_snapshot_json"))
+    item.pop("config_snapshot_json", None)
+    return item
+
+
 def build_config_snapshot(
     *,
     payload: Any,
@@ -445,7 +463,10 @@ def create_run(payload: RunCreate) -> RunResponse:
 
     try:
         git_state = get_remote_git_state()
-        git_commit = payload.git_commit or git_state["commit"]
+        git_commit = resolve_git_commit_from_payload(
+            payload.git_commit,
+            git_state["commit"],
+        )
     except Exception as exc:
         raise HTTPException(
             status_code=500,
@@ -480,6 +501,15 @@ def create_run(payload: RunCreate) -> RunResponse:
             status = "failed"
             error_message = combined_output or f"Launch failed with exit code {code}"
 
+    config_snapshot = build_config_snapshot(
+        payload=payload,
+        git_commit=git_commit,
+        run_id=run_id,
+        created_at=created_at,
+        status=status,
+        slurm_job_id=slurm_job_id,
+    )
+
     with get_db() as conn:
         conn.execute(
             """
@@ -494,9 +524,10 @@ def create_run(payload: RunCreate) -> RunResponse:
                 slurm_job_id,
                 wandb_run_id,
                 created_at,
-                error_message
+                error_message,
+                config_snapshot_json
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 run_id,
@@ -510,6 +541,7 @@ def create_run(payload: RunCreate) -> RunResponse:
                 payload.wandb_run_id,
                 created_at,
                 error_message,
+                json_dumps(config_snapshot),
             ),
         )
         create_run_event(
@@ -581,6 +613,7 @@ def create_run(payload: RunCreate) -> RunResponse:
         wandb_run_id=payload.wandb_run_id,
         created_at=created_at,
         error_message=error_message,
+        config_snapshot=config_snapshot,
     )
 
 
@@ -686,20 +719,12 @@ def list_runs() -> list[dict[str, Any]]:
             """
         ).fetchall()
 
-    runs: list[dict[str, Any]] = []
-    for row in rows:
-        item = dict(row)
-        item["config_overrides"] = json_loads(item.get("config_overrides"))
-        runs.append(item)
-
-    return runs
+    return [parse_run_row(dict(row)) for row in rows]
 
 
 @router.get("/runs/{run_id}")
 def get_run(run_id: str) -> dict[str, Any]:
-    item = ensure_run_exists(run_id)
-    item["config_overrides"] = json_loads(item.get("config_overrides"))
-    return item
+    return parse_run_row(ensure_run_exists(run_id))
 
 
 @router.post("/runs/{run_id}/refresh")

@@ -10,7 +10,8 @@ CREATE TABLE IF NOT EXISTS runs (
     wandb_run_id TEXT,
     created_at TEXT NOT NULL,
     last_checked_at TEXT,
-    error_message TEXT
+    error_message TEXT,
+    config_snapshot_json TEXT
 );
 
 CREATE TABLE IF NOT EXISTS jobs (

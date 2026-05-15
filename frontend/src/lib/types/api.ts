@@ -19,6 +19,7 @@ export type ApiRun = {
   runtime?: number | string | null;
   learning_rate?: number | null;
   latest_metric_timestamp?: string | null;
+  config_snapshot?: Record<string, unknown> | null;
 };
 
 export type ApiSystemStatus = {
@@ -71,7 +72,7 @@ export type ApiRunMetrics = {
 
 export type CreateRunPayload = {
   name: string;
-  git_commit: string;
+  git_commit?: string;
   config_path: string;
   config_overrides?: Record<string, string>;
   wandb_config_ref?: string;

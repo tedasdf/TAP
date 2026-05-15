@@ -30,6 +30,7 @@ class RunResponse(BaseModel):
     wandb_run_id: str | None
     created_at: str
     error_message: str | None
+    config_snapshot: dict[str, Any] | None = None
 
 
 class JobUpdate(BaseModel):
