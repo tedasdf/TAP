@@ -50,14 +50,20 @@ export type ApiSystemStatus = {
 };
 
 export type ApiMetricPoint = {
-  step: number;
-  epoch?: number | null;
+  run_id: string;
+  step?: number | null;
+  train_loss?: number | null;
   training_loss?: number | null;
+  val_loss?: number | null;
   validation_loss?: number | null;
-  runtime?: number | string | null;
   learning_rate?: number | null;
+  runtime_seconds?: number | null;
+  runtime?: string | number | null;
+  tokens_seen?: number | null;
+  samples_seen?: number | null;
+  tokens_per_second?: number | null;
+  created_at: string;
   source?: string | null;
-  created_at?: string | null;
 };
 
 export type ApiRunMetrics = {

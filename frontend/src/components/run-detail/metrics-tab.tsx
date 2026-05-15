@@ -1,4 +1,3 @@
-
 import {
   LineChart,
   Line,
@@ -9,15 +8,15 @@ import {
   ResponsiveContainer,
 } from "recharts";
 
-type MetricsPoint = {
+type MetricChartPoint = {
   step: number;
-  trainingLoss: number | null;
-  validationLoss: number | null;
-  learningRate: number | null;
+  trainingLoss?: number;
+  validationLoss?: number;
+  learningRate?: number;
 };
 
 type MetricsTabProps = {
-  data: MetricsPoint[];
+  data: MetricChartPoint[];
 };
 
 function ChartCard({
@@ -26,12 +25,13 @@ function ChartCard({
   dataKey,
 }: {
   title: string;
-  data: MetricsPoint[];
+  data: MetricChartPoint[];
   dataKey: "trainingLoss" | "validationLoss" | "learningRate";
 }) {
   return (
     <div className="rounded-2xl border border-zinc-800 bg-zinc-900/70 p-4">
       <h3 className="text-sm font-semibold text-white">{title}</h3>
+
       <div className="mt-4 h-56">
         <ResponsiveContainer width="100%" height="100%">
           <LineChart data={data}>
@@ -46,7 +46,13 @@ function ChartCard({
                 color: "#fff",
               }}
             />
-            <Line type="monotone" dataKey={dataKey} stroke="#fafafa" dot={false} strokeWidth={2} />
+            <Line
+              type="monotone"
+              dataKey={dataKey}
+              stroke="#fafafa"
+              dot={false}
+              strokeWidth={2}
+            />
           </LineChart>
         </ResponsiveContainer>
       </div>

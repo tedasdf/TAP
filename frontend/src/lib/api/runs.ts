@@ -22,7 +22,7 @@ export function getRunMetrics(runId: string) {
   return apiRequest<ApiRunMetrics>(`/runs/${runId}/metrics`);
 }
 
-export function getRunMetricHistory(runId: string) {
+export async function getRunMetricHistory(runId: string): Promise<ApiMetricPoint[]> {
   return apiRequest<ApiMetricPoint[]>(`/runs/${runId}/metrics/history`);
 }
 

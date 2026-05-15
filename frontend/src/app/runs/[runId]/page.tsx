@@ -57,17 +57,6 @@ function buildOverviewRun(run: ApiRun, metrics?: ApiRunMetrics): RunCardView & {
   };
 }
 
-function buildMetricsSeries(metricHistory?: ApiMetricPoint[]) {
-  return (metricHistory ?? [])
-    .filter((point) => point.step !== null && point.step !== undefined)
-    .map((point) => ({
-      step: point.step,
-      trainingLoss: point.training_loss ?? null,
-      validationLoss: point.validation_loss ?? null,
-      learningRate: point.learning_rate ?? null,
-    }));
-}
-
 export default function RunDetailPage() {
   const params = useParams<{ runId: string }>();
   const runId = params.runId;
@@ -101,7 +90,12 @@ export default function RunDetailPage() {
   }, [runQuery.data, metricsQuery.data]);
 
   const metricsSeries = useMemo(() => {
-    return buildMetricsSeries(metricHistoryQuery.data);
+    return (metricHistoryQuery.data ?? []).map((point, index) => ({
+      step: point.step ?? index,
+      trainingLoss: point.training_loss ?? point.train_loss ?? undefined,
+      validationLoss: point.validation_loss ?? point.val_loss ?? undefined,
+      learningRate: point.learning_rate ?? undefined,
+    }));
   }, [metricHistoryQuery.data]);
 
 
