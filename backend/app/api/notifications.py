@@ -1,6 +1,6 @@
 from typing import Any
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 
 from app.db import get_db
 from app.schemas import NotificationCreate
@@ -45,15 +45,27 @@ def ensure_job_exists(job_id: str) -> None:
 
 
 @router.get("/notifications")
-def list_notifications() -> list[dict[str, Any]]:
+def list_notifications(
+    unread_only: bool = Query(default=False),
+) -> list[dict[str, Any]]:
     with get_db() as conn:
-        rows = conn.execute(
-            """
-            SELECT *
-            FROM notifications
-            ORDER BY datetime(timestamp) DESC
-            """
-        ).fetchall()
+        if unread_only:
+            rows = conn.execute(
+                """
+                SELECT *
+                FROM notifications
+                WHERE read_state = 0
+                ORDER BY datetime(timestamp) DESC
+                """
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                """
+                SELECT *
+                FROM notifications
+                ORDER BY datetime(timestamp) DESC
+                """
+            ).fetchall()
 
     return [dict(row) for row in rows]
 
@@ -116,6 +128,7 @@ def create_test_notification() -> dict[str, Any]:
     return create_notification(payload)
 
 
+
 @router.patch("/notifications/{notification_id}/read")
 def mark_notification_read(notification_id: str) -> dict[str, Any]:
     ensure_notification_exists(notification_id)
@@ -132,3 +145,22 @@ def mark_notification_read(notification_id: str) -> dict[str, Any]:
         ).fetchone()
 
     return dict(row)
+
+@router.post("/notifications/{notification_id}/read")
+def mark_notification_read_post(notification_id: str) -> dict[str, Any]:
+    return mark_notification_read(notification_id)
+
+@router.post("/notifications/read-all")
+def mark_all_notifications_read() -> dict[str, int]:
+    with get_db() as conn:
+        result = conn.execute(
+            """
+            UPDATE notifications
+            SET read_state = 1
+            WHERE read_state = 0
+            """
+        )
+
+    return {
+        "updated": result.rowcount if result.rowcount is not None else 0,
+    }

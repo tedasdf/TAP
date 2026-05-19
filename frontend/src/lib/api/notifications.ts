@@ -16,7 +16,7 @@ export function markNotificationRead(notificationId: string) {
 }
 
 export function markAllNotificationsRead() {
-  return apiRequest<{ updated_count: number }>("/notifications/read-all", {
+  return apiRequest<{ updated: number }>("/notifications/read-all", {
     method: "POST",
   });
 }
