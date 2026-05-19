@@ -9,8 +9,6 @@ from app.services.run_refresh import (
     list_active_run_ids,
     refresh_run_by_id,
 )
-from app.services.run_refresh import list_active_run_ids, refresh_run_by_id
-
 
 _worker_task: asyncio.Task | None = None
 _stop_event: asyncio.Event | None = None

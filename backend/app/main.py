@@ -11,6 +11,7 @@ from app.api.metrics import router as metrics_router
 from app.api.notifications import router as notifications_router
 from app.api.system import router as system_router
 from app.services.background_worker import start_background_worker, stop_background_worker
+from app.api.configs import router as config_router
 
 DB_PATH = Path(os.environ.get("TAP_DB_PATH", "tap.db"))
 
@@ -41,3 +42,4 @@ app.include_router(runs_router)
 app.include_router(jobs_router)
 app.include_router(metrics_router)
 app.include_router(notifications_router)
+app.include_router(config_router)
