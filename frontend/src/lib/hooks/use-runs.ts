@@ -1,7 +1,7 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { cancelRun, createRun, getRun, getRunEvents, getRunMetricHistory, getRunMetrics, getRuns, refreshRun, syncWandb } from "@/lib/api/runs";
+import { cancelRun, createRun, getRun, getRunEvents, getRunMetricHistory, getRunMetrics, getRunMetricSyncStatus, getRuns, refreshRun, syncWandb } from "@/lib/api/runs";
 import { CreateRunPayload } from "@/lib/types/api";
 
 export function useRuns() {
@@ -77,6 +77,7 @@ export function useCancelRun() {
 export function useSyncWandb() {
   const queryClient = useQueryClient();
 
+
   return useMutation({
     mutationFn: (runId: string) => syncWandb(runId),
     onSuccess: (_data, runId) => {
@@ -96,5 +97,14 @@ export function useCreateRun() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["runs"] });
     },
+  });
+}
+
+export function useRunMetricSyncStatus(runId: string | undefined) {
+  return useQuery({
+    queryKey: ["runs", runId, "metrics", "sync-status"],
+    queryFn: () => getRunMetricSyncStatus(runId as string),
+    enabled: Boolean(runId),
+    refetchInterval: 15000,
   });
 }

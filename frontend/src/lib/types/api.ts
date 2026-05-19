@@ -133,3 +133,13 @@ export type ApiBackgroundWorkerStatus = {
   last_cycle_error_count: number;
   last_error?: string | null;
 };
+
+export type ApiMetricSyncStatus = {
+  run_id: string;
+  source?: string | null;
+  status: "never_synced" | "syncing" | "success" | "failed" | string;
+  last_started_at?: string | null;
+  last_finished_at?: string | null;
+  error_message?: string | null;
+  points_synced: number;
+};

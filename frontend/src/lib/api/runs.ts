@@ -1,5 +1,5 @@
 import { apiRequest } from "@/lib/api/client";
-import type { ApiRunLogs, RunEvent } from "@/lib/types/api";
+import type { ApiMetricSyncStatus, ApiRunLogs, RunEvent } from "@/lib/types/api";
 import { ApiMetricPoint, ApiRun, ApiRunMetrics, CreateRunPayload } from "@/lib/types/api";
 
 
@@ -53,4 +53,8 @@ export function createRun(payload: CreateRunPayload) {
 
 export async function getRunEvents(runId: string): Promise<RunEvent[]> {
   return apiRequest<RunEvent[]>(`/runs/${runId}/events`);
+}
+
+export function getRunMetricSyncStatus(runId: string) {
+  return apiRequest<ApiMetricSyncStatus>(`/runs/${runId}/metrics/sync-status`);
 }

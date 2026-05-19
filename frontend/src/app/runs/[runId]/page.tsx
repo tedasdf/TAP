@@ -13,7 +13,7 @@ import { ConfigTab } from "@/components/run-detail/config-tab";
 import { RunEventsTimeline } from "@/components/run-detail/RunEventsTimeline";
 import { EmptyState } from "@/components/shared/empty-state";
 import { LoadingState } from "@/components/shared/loading-state";
-import { useCancelRun, useRefreshRun, useRun, useRunEvents, useRunMetricHistory, useRunMetrics, useSyncWandb } from "@/lib/hooks/use-runs";
+import { useCancelRun, useRefreshRun, useRun, useRunEvents, useRunMetricHistory, useRunMetrics, useSyncWandb, useRunMetricSyncStatus } from "@/lib/hooks/use-runs";
 import { useJob } from "@/lib/hooks/use-jobs";
 import { ApiMetricPoint, ApiRun, ApiRunMetrics } from "@/lib/types/api";
 import { RunLogsTab } from "@/components/run-detail/RunLogsTab";
@@ -75,6 +75,8 @@ export default function RunDetailPage() {
   const cancelRunMutation = useCancelRun();
   const refreshRunMutation = useRefreshRun();
   const syncWandbMutation = useSyncWandb();
+
+  const metricSyncStatusQuery = useRunMetricSyncStatus(runId);
 
   const isLoading =
     runQuery.isLoading ||
@@ -211,15 +213,35 @@ export default function RunDetailPage() {
           <>
             {activeTab === "overview" && overviewRun && <OverviewTab run={overviewRun} />}
 
-            {activeTab === "metrics" &&
-              (metricsSeries.length > 0 ? (
-                <MetricsTab data={metricsSeries} />
-              ) : (
-                <EmptyState
-                  title="No metric history yet"
-                  description="This run has no real metric history yet. Sync W&B or upsert metric points before showing charts."
-                />
-              ))}
+            {activeTab === "metrics" && (
+              <div className="space-y-4">
+                <div className="rounded-2xl border border-zinc-800 bg-zinc-900/70 p-4 text-sm">
+                  <p className="font-semibold text-white">Metric Sync Status</p>
+
+                  <div className="mt-3 space-y-1 text-zinc-300">
+                    <p>Status: {metricSyncStatusQuery.data?.status ?? "unknown"}</p>
+                    <p>Source: {metricSyncStatusQuery.data?.source ?? "—"}</p>
+                    <p>Last synced: {metricSyncStatusQuery.data?.last_finished_at ?? "—"}</p>
+                    <p>Points synced: {metricSyncStatusQuery.data?.points_synced ?? 0}</p>
+
+                    {metricSyncStatusQuery.data?.error_message ? (
+                      <p className="text-red-300">
+                        Error: {metricSyncStatusQuery.data.error_message}
+                      </p>
+                    ) : null}
+                  </div>
+                </div>
+
+                {metricsSeries.length > 0 ? (
+                  <MetricsTab data={metricsSeries} />
+                ) : (
+                  <EmptyState
+                    title="No metric history yet"
+                    description="This run has no real metric history yet. Sync W&B or upsert metric points before showing charts."
+                  />
+                )}
+              </div>
+            )}
 
             {activeTab === "logs" && (
               <RunLogsTab runId={runQuery.data.run_id} />
