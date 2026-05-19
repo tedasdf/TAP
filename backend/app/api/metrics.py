@@ -11,6 +11,7 @@ from app.services.metrics import (
     upsert_metric_snapshot,
 )
 from app.services.wandb_client import get_run_snapshot
+from app.services.metrics import ensure_metric_sync_status_table
 
 router = APIRouter(tags=["metrics"])
 
@@ -25,7 +26,6 @@ def ensure_run_exists(run_id: str) -> None:
     if row is None:
         raise HTTPException(status_code=404, detail=f"Run '{run_id}' not found")
 
-
 @router.put("/runs/{run_id}/metrics")
 def upsert_metrics(run_id: str, payload: MetricSnapshotUpsert) -> dict[str, Any]:
     ensure_run_exists(run_id)
@@ -35,13 +35,13 @@ def upsert_metrics(run_id: str, payload: MetricSnapshotUpsert) -> dict[str, Any]
 
     with get_db() as conn:
         row = upsert_metric_snapshot(conn, run_id, metrics)
+
+        if row is None:
+            raise HTTPException(status_code=500, detail="Metric upsert failed")
+
         mark_metric_sync_success(conn, run_id, "manual", 1)
 
-    if row is None:
-        raise HTTPException(status_code=500, detail="Metric upsert failed")
-
     return row
-
 
 @router.get("/runs/{run_id}/metrics")
 def get_metrics(run_id: str) -> dict[str, Any]:
@@ -107,9 +107,13 @@ def sync_metrics_from_wandb(run_id: str) -> dict[str, Any]:
 
     wandb_run_id = run_row["wandb_run_id"]
     if not wandb_run_id:
+        error_message = "No wandb_run_id stored for this run"
+        with get_db() as conn:
+            mark_metric_sync_failed(conn, run_id, "wandb", error_message)
+
         raise HTTPException(
             status_code=400,
-            detail="No wandb_run_id stored for this run",
+            detail=error_message,
         )
 
     with get_db() as conn:
@@ -164,34 +168,8 @@ def get_metric_sync_status(run_id: str) -> dict[str, Any]:
     ensure_run_exists(run_id)
 
     with get_db() as conn:
-        row = conn.execute(
-            """
-            SELECT *
-            FROM metric_sync_status
-            WHERE run_id = ?
-            """,
-            (run_id,),
-        ).fetchone()
+        ensure_metric_sync_status_table(conn)
 
-    if row is None:
-        return {
-            "run_id": run_id,
-            "source": None,
-            "status": "never_synced",
-            "last_started_at": None,
-            "last_finished_at": None,
-            "error_message": None,
-            "points_synced": 0,
-        }
-
-    return dict(row)
-
-
-@router.get("/runs/{run_id}/metrics/sync-status")
-def get_metric_sync_status(run_id: str) -> dict[str, Any]:
-    ensure_run_exists(run_id)
-
-    with get_db() as conn:
         row = conn.execute(
             """
             SELECT *
