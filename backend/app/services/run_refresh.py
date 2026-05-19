@@ -29,8 +29,11 @@ def json_dumps(value: Any) -> str:
 def json_loads(value: str | None) -> dict[str, Any]:
     if not value:
         return {}
-    return json.loads(value)
 
+    try:
+        return json.loads(value)
+    except json.JSONDecodeError:
+        return {}
 
 def ensure_run_exists_for_refresh(run_id: str) -> dict[str, Any]:
     with get_db() as conn:

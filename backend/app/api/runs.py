@@ -40,8 +40,12 @@ def json_dumps(value: Any) -> str:
 def json_loads(value: str | None) -> dict[str, Any]:
     if not value:
         return {}
-    return json.loads(value)
 
+    try:
+        return json.loads(value)
+    except json.JSONDecodeError:
+        return {}
+    
 
 def resolve_git_commit_from_payload(payload_git_commit: str | None, remote_commit: str) -> str:
     """Resolve UI-friendly git refs into the actual commit stored by TAP."""
