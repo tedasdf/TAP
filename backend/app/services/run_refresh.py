@@ -133,54 +133,53 @@ def create_run_status_notification(
 
     status = new_status.lower()
 
-    if status == "running":
-        create_notification_row(
-            conn,
-            event_type="run_started",
-            severity="info",
-            title="Run started",
-            message=f"Run {run_id} has started running.",
-            run_id=run_id,
-            job_id=job_id,
-        )
+    notification_map = {
+        "running": {
+            "event_type": "run_started",
+            "severity": "info",
+            "title": "Run started",
+            "message": f"Run {run_id} has started running.",
+        },
+        "completed": {
+            "event_type": "run_completed",
+            "severity": "success",
+            "title": "Run completed",
+            "message": f"Run {run_id} completed successfully.",
+        },
+        "failed": {
+            "event_type": "run_failed",
+            "severity": "error",
+            "title": "Run failed",
+            "message": f"Run {run_id} failed.",
+        },
+        "cancelled": {
+            "event_type": "run_cancelled",
+            "severity": "warning",
+            "title": "Run cancelled",
+            "message": f"Run {run_id} was cancelled.",
+        },
+    }
+
+    notification = notification_map.get(status)
+    if notification is None:
         return
 
-    if status == "completed":
-        create_notification_row(
-            conn,
-            event_type="run_completed",
-            severity="success",
-            title="Run completed",
-            message=f"Run {run_id} completed successfully.",
-            run_id=run_id,
-            job_id=job_id,
-        )
+    if lifecycle_notification_already_exists(
+        conn,
+        run_id=run_id,
+        event_type=notification["event_type"],
+    ):
         return
 
-    if status == "failed":
-        create_notification_row(
-            conn,
-            event_type="run_failed",
-            severity="error",
-            title="Run failed",
-            message=f"Run {run_id} failed.",
-            run_id=run_id,
-            job_id=job_id,
-        )
-        return
-
-    if status == "cancelled":
-        create_notification_row(
-            conn,
-            event_type="run_cancelled",
-            severity="warning",
-            title="Run cancelled",
-            message=f"Run {run_id} was cancelled.",
-            run_id=run_id,
-            job_id=job_id,
-        )
-        return
-
+    create_notification_row(
+        conn,
+        event_type=notification["event_type"],
+        severity=notification["severity"],
+        title=notification["title"],
+        message=notification["message"],
+        run_id=run_id,
+        job_id=job_id,
+    )
 
 def metric_to_float(value: Any) -> float | None:
     if value is None:
@@ -216,6 +215,25 @@ def get_best_validation_loss(conn, run_id: str) -> float | None:
 
     return metric_to_float(row["best_validation_loss"])
 
+
+def lifecycle_notification_already_exists(
+    conn,
+    *,
+    run_id: str,
+    event_type: str,
+) -> bool:
+    row = conn.execute(
+        """
+        SELECT notification_id
+        FROM notifications
+        WHERE run_id = ?
+          AND event_type = ?
+        LIMIT 1
+        """,
+        (run_id, event_type),
+    ).fetchone()
+
+    return row is not None
 
 def notification_already_exists(
     conn,
@@ -446,13 +464,13 @@ def refresh_run_by_id(run_id: str) -> dict[str, Any]:
                     },
                 )
 
-                create_notification_row(
+                create_metric_notification_once(
                     conn,
+                    run_id=run_id,
                     event_type="wandb_sync_failed",
                     severity="warning",
                     title="W&B sync failed",
                     message=f"W&B sync failed for run {run_id}: {exc}",
-                    run_id=run_id,
                     job_id=slurm_job_id,
                 )
 
@@ -550,3 +568,34 @@ def list_active_run_ids() -> list[str]:
         ).fetchall()
 
     return [row["run_id"] for row in rows]
+
+def refresh_active_runs() -> dict[str, Any]:
+    run_ids = list_active_run_ids()
+
+    refreshed: list[dict[str, Any]] = []
+    failed: list[dict[str, str]] = []
+
+    for run_id in run_ids:
+        try:
+            result = refresh_run_by_id(run_id)
+            refreshed.append(
+                {
+                    "run_id": run_id,
+                    "status": result["run"]["status"],
+                }
+            )
+        except Exception as exc:
+            failed.append(
+                {
+                    "run_id": run_id,
+                    "error": str(exc),
+                }
+            )
+
+    return {
+        "total": len(run_ids),
+        "refreshed": refreshed,
+        "failed": failed,
+        "refreshed_count": len(refreshed),
+        "failed_count": len(failed),
+    }

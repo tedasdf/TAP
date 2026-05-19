@@ -12,9 +12,7 @@ from typing import Any
 
 from fastapi import HTTPException, APIRouter
 from app.db import get_db
-from app.services.jobs import refresh_job_from_slurm, derive_run_status, reconcile_run_status
-from app.services.wandb_client import get_run_snapshot
-from app.services.metrics import upsert_metric_snapshot
+
 from app.schemas import RunCreate, RunResponse
 from app.services.launcher import (
     launch_training_run,
@@ -25,7 +23,8 @@ from app.services.launcher import (
     read_remote_config_file,
 )
 from app.config import settings
-from app.services.run_refresh import RunNotFoundError, refresh_run_by_id
+from app.services.run_refresh import RunNotFoundError, refresh_run_by_id, refresh_active_runs
+
 
 router = APIRouter(tags=["runs"])
 
@@ -740,6 +739,10 @@ def list_runs() -> list[dict[str, Any]]:
 def get_run(run_id: str) -> dict[str, Any]:
     return parse_run_row(ensure_run_exists(run_id))
 
+
+@router.post("/runs/refresh-active")
+def refresh_active_runs_endpoint() -> dict[str, Any]:
+    return refresh_active_runs()
 
 @router.post("/runs/{run_id}/refresh")
 def refresh_run(run_id: str) -> dict[str, Any]:

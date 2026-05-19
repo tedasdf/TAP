@@ -143,3 +143,12 @@ export type ApiMetricSyncStatus = {
   error_message?: string | null;
   points_synced: number;
 };
+
+
+export type RefreshActiveRunsResponse = {
+  total: number;
+  refreshed: { run_id: string; status: string }[];
+  failed: { run_id: string; error: string }[];
+  refreshed_count: number;
+  failed_count: number;
+};

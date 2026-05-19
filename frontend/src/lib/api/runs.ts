@@ -1,5 +1,5 @@
 import { apiRequest } from "@/lib/api/client";
-import type { ApiMetricSyncStatus, ApiRunLogs, RunEvent } from "@/lib/types/api";
+import type { ApiMetricSyncStatus, ApiRunLogs, RefreshActiveRunsResponse, RunEvent } from "@/lib/types/api";
 import { ApiMetricPoint, ApiRun, ApiRunMetrics, CreateRunPayload } from "@/lib/types/api";
 
 
@@ -57,4 +57,10 @@ export async function getRunEvents(runId: string): Promise<RunEvent[]> {
 
 export function getRunMetricSyncStatus(runId: string) {
   return apiRequest<ApiMetricSyncStatus>(`/runs/${runId}/metrics/sync-status`);
+}
+
+export function refreshActiveRuns() {
+  return apiRequest<RefreshActiveRunsResponse>("/runs/refresh-active", {
+    method: "POST",
+  });
 }
