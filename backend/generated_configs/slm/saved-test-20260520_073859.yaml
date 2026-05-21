@@ -1,0 +1,34 @@
+experiment:
+  name: saved-test
+  family: slm
+  task: causal_language_modeling
+  tags:
+  - generated
+  - tap
+model:
+  name: small-transformer
+  type: decoder_transformer
+  vocab_size: 50257
+  seq_len: 256
+  d_model: 256
+  n_layers: 4
+  n_heads: 4
+training:
+  batch_size: 4
+  max_steps: 100
+  learning_rate: 0.0003
+data:
+  mode: text
+  backend: torch
+  source_type: huggingface
+  dataset_name: HuggingFaceFW/fineweb-edu
+  dataset_config_name: sample-10BT
+  train_split_name: train
+  streaming: true
+  text_fields:
+  - text
+  max_train_samples: 1000
+  val_fraction: 0.01
+  max_val_samples: 100
+tracking:
+  wandb_enabled: true
