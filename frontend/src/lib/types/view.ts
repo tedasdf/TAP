@@ -21,6 +21,7 @@ export type RunCardView = {
   runtime?: string;
   errorMessage?: string | null;
   slurmJobId?: string | null;
+  templateId?: string | null;
 };
 
 export type AlertView = {

@@ -54,6 +54,7 @@ function buildOverviewRun(run: ApiRun, metrics?: ApiRunMetrics): RunCardView & {
           ? run.config_overrides
           : JSON.stringify(run.config_overrides, null, 2),
     errorMessage: run.error_message ?? undefined,
+    templateId: run.template_id ?? undefined,
   };
 }
 

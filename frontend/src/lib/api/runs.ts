@@ -64,3 +64,7 @@ export function refreshActiveRuns() {
     method: "POST",
   });
 }
+
+export function deleteRun(runId: string) {
+  return apiRequest<void>(`/runs/${runId}`, { method: "DELETE" });
+}

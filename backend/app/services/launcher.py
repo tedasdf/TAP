@@ -126,6 +126,26 @@ def build_remote_launch_command(
     return f"bash -lc {shlex.quote(script)}"
 
 
+def resolve_remote_training_git_commit() -> tuple[str | None, str | None]:
+    from app.config import settings
+    remote_repo_path = settings.TAP_M3_REPO_PATH
+
+    if not remote_repo_path:
+        return None, "settings.TAP_M3_REPO_PATH is empty"
+
+    command = f"cd {shlex.quote(remote_repo_path)} && git rev-parse HEAD"
+    code, stdout, stderr = run_ssh_command(command)
+
+    if code != 0:
+        return None, stderr or f"Remote git command failed with exit code {code}"
+
+    commit = stdout.strip()
+    if not commit:
+        return None, "Remote git command succeeded but returned empty stdout"
+
+    return commit, None
+
+
 def build_remote_log_path(run_name: str, slurm_job_id: str) -> str:
     filename = f"{run_name}-{slurm_job_id}.out"
     return posixpath.join(M3_REPO_PATH, "logs/slurm", filename)

@@ -6,7 +6,7 @@ import { AppShell } from "@/components/layout/app-shell";
 import { RunCard } from "@/components/runs/run-card";
 import { EmptyState } from "@/components/shared/empty-state";
 import { LoadingState } from "@/components/shared/loading-state";
-import { useRuns } from "@/lib/hooks/use-runs";
+import { useDeleteRun, useRuns } from "@/lib/hooks/use-runs";
 import { ApiRun } from "@/lib/types/api";
 import { RunCardView, RunStatus } from "@/lib/types/view";
 
@@ -25,11 +25,13 @@ function mapRunToCardView(run: ApiRun): RunCardView {
     runtime: run.runtime == null ? undefined : String(run.runtime),
     errorMessage: run.error_message ?? undefined,
     slurmJobId: run.slurm_job_id ?? undefined,
+    templateId: run.template_id ?? undefined,
   };
 }
 
 export default function RunsPage() {
   const { data, isLoading, isError } = useRuns();
+  const deleteRunMutation = useDeleteRun();
 
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedFilter, setSelectedFilter] = useState<FilterValue>("all");
@@ -127,7 +129,14 @@ export default function RunsPage() {
               <p className="text-zinc-500">No runs found</p>
             </div>
           ) : (
-            filteredRuns.map((run) => <RunCard key={run.id} run={run} />)
+            filteredRuns.map((run) => (
+              <RunCard
+                key={run.id}
+                run={run}
+                onDelete={(id) => deleteRunMutation.mutate(id)}
+                isDeleting={deleteRunMutation.isPending && deleteRunMutation.variables === run.id}
+              />
+            ))
           )}
         </div>
       </div>

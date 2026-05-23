@@ -1,45 +1,24 @@
 "use client";
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { Suspense, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { AppShell } from "@/components/layout/app-shell";
 import { useCreateRun } from "@/lib/hooks/use-runs";
 
-export default function CreateRunPage() {
+function CreateRunForm() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const createRunMutation = useCreateRun();
 
   const [name, setName] = useState("");
-  const [gitCommit, setGitCommit] = useState("");
-  const [configPath, setConfigPath] = useState("");
+  const [configPath, setConfigPath] = useState(searchParams.get("configPath") ?? "");
   const [configOverrides, setConfigOverrides] = useState("");
   const [wandbConfigRef, setWandbConfigRef] = useState("");
-  const [wandbRunId, setWandbRunId] = useState("");
-  const [launchNow, setLaunchNow] = useState(true);
   const [formError, setFormError] = useState<string | null>(null);
 
   const isSubmitting = createRunMutation.isPending;
 
-  function parseConfigOverrides(text: string) {
-    const overrides: Record<string, string> = {};
-
-    text
-      .split("\n")
-      .map((line) => line.trim())
-      .filter(Boolean)
-      .forEach((line) => {
-        const [key, ...valueParts] = line.split("=");
-        const value = valueParts.join("=").trim();
-
-        if (key.trim() && value) {
-          overrides[key.trim()] = value;
-        }
-      });
-
-    return overrides;
-  }
-
-  async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
+  async function handleSubmit(e: React.SyntheticEvent<HTMLFormElement>) {
     e.preventDefault();
     setFormError(null);
 
@@ -54,17 +33,11 @@ export default function CreateRunPage() {
     }
 
     try {
-      const parsedOverrides = parseConfigOverrides(configOverrides);
-
       const createdRun = await createRunMutation.mutateAsync({
         name: name.trim(),
-        git_commit: gitCommit.trim() || undefined,
         config_path: configPath.trim(),
-        config_overrides:
-          Object.keys(parsedOverrides).length > 0 ? parsedOverrides : undefined,
+        config_overrides: configOverrides.trim() || undefined,
         wandb_config_ref: wandbConfigRef.trim() || undefined,
-        wandb_run_id: wandbRunId.trim() || undefined,
-        launch_now: launchNow,
       });
 
       router.push(`/runs/${createdRun.run_id}`);
@@ -100,21 +73,6 @@ export default function CreateRunPage() {
               onChange={(e) => setName(e.target.value)}
               className="w-full rounded-xl border border-zinc-800 bg-black px-3 py-2.5 text-sm text-white outline-none"
               placeholder="smollm-350m-baseline"
-              disabled={isSubmitting}
-            />
-          </div>
-
-
-          <div className="space-y-2">
-            <label htmlFor="git-commit" className="text-sm text-zinc-300">
-              Git commit / ref
-            </label>
-            <input
-              id="git-commit"
-              value={gitCommit}
-              onChange={(e) => setGitCommit(e.target.value)}
-              className="w-full rounded-xl border border-zinc-800 bg-black px-3 py-2.5 text-sm text-white outline-none"
-              placeholder="optional — backend resolves current commit"
               disabled={isSubmitting}
             />
           </div>
@@ -161,31 +119,6 @@ export default function CreateRunPage() {
             />
           </div>
 
-
-          <div className="space-y-2">
-            <label htmlFor="wandb-run-id" className="text-sm text-zinc-300">
-              W&amp;B run ID
-            </label>
-            <input
-              id="wandb-run-id"
-              value={wandbRunId}
-              onChange={(e) => setWandbRunId(e.target.value)}
-              className="w-full rounded-xl border border-zinc-800 bg-black px-3 py-2.5 text-sm text-white outline-none"
-              placeholder="optional existing W&B run ID"
-              disabled={isSubmitting}
-            />
-          </div>
-
-          <label className="flex items-center gap-3 rounded-xl border border-zinc-800 bg-black px-3 py-2.5 text-sm text-zinc-300">
-            <input
-              type="checkbox"
-              checked={launchNow}
-              onChange={(e) => setLaunchNow(e.target.checked)}
-              disabled={isSubmitting}
-            />
-            Launch on Slurm now
-          </label>
-
           {formError ? (
             <div className="rounded-xl border border-red-500/20 bg-red-500/10 p-3 text-sm text-red-200">
               {formError}
@@ -213,5 +146,13 @@ export default function CreateRunPage() {
         </form>
       </div>
     </AppShell>
+  );
+}
+
+export default function CreateRunPage() {
+  return (
+    <Suspense>
+      <CreateRunForm />
+    </Suspense>
   );
 }

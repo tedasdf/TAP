@@ -1,8 +1,9 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { cancelRun, createRun, getRun, getRunEvents, getRunMetricHistory, getRunMetrics, getRunMetricSyncStatus, getRuns, refreshRun, syncWandb } from "@/lib/api/runs";
+import { cancelRun, createRun, deleteRun, getRun, getRunMetrics, getRuns, refreshRun, syncWandb } from "@/lib/api/runs";
 import { CreateRunPayload } from "@/lib/types/api";
+
 
 export function useRuns() {
   return useQuery({
@@ -30,39 +31,6 @@ export function useRunMetrics(runId: string) {
   });
 }
 
-export function useRunMetricHistory(runId: string) {
-  return useQuery({
-    queryKey: ["runs", runId, "metrics", "history"],
-    queryFn: () => getRunMetricHistory(runId),
-    enabled: !!runId,
-    refetchInterval: 15000,
-  });
-}
-
-export function useRunEvents(runId: string) {
-  return useQuery({
-    queryKey: ["run-events", runId],
-    queryFn: () => getRunEvents(runId),
-    enabled: Boolean(runId),
-    refetchInterval: 10_000,
-  });
-}
-
-export function useRefreshRun() {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: (runId: string) => refreshRun(runId),
-    onSuccess: (_data, runId) => {
-      queryClient.invalidateQueries({ queryKey: ["runs"] });
-      queryClient.invalidateQueries({ queryKey: ["runs", runId] });
-      queryClient.invalidateQueries({ queryKey: ["runs", runId, "metrics"] });
-      queryClient.invalidateQueries({ queryKey: ["runs", runId, "metrics", "history"] });
-      queryClient.invalidateQueries({ queryKey: ["jobs"] });
-    },
-  });
-}
-
 export function useCancelRun() {
   const queryClient = useQueryClient();
 
@@ -77,14 +45,10 @@ export function useCancelRun() {
 export function useSyncWandb() {
   const queryClient = useQueryClient();
 
-
   return useMutation({
     mutationFn: (runId: string) => syncWandb(runId),
-    onSuccess: (_data, runId) => {
+    onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["runs"] });
-      queryClient.invalidateQueries({ queryKey: ["runs", runId] });
-      queryClient.invalidateQueries({ queryKey: ["runs", runId, "metrics"] });
-      queryClient.invalidateQueries({ queryKey: ["runs", runId, "metrics", "history"] });
     },
   });
 }
@@ -100,11 +64,20 @@ export function useCreateRun() {
   });
 }
 
-export function useRunMetricSyncStatus(runId: string | undefined) {
-  return useQuery({
-    queryKey: ["runs", runId, "metrics", "sync-status"],
-    queryFn: () => getRunMetricSyncStatus(runId as string),
-    enabled: Boolean(runId),
-    refetchInterval: 15000,
+
+export function useRefreshRun() {
+  return useMutation({
+    mutationFn: refreshRun,
+  });
+}
+
+export function useDeleteRun() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (runId: string) => deleteRun(runId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["runs"] });
+    },
   });
 }
