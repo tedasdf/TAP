@@ -21,6 +21,7 @@ class Settings:
     WANDB_API_KEY: str = os.environ.get("WANDB_API_KEY", "")
     DISCORD_WEBHOOK_URL: str = os.environ.get("DISCORD_WEBHOOK_URL", "")
     WANDB_HEALTHCHECK_RUN_ID: str = os.environ.get("WANDB_HEALTHCHECK_RUN_ID", "")
+    TAP_MAX_CONCURRENT_JOBS: int = int(os.environ.get("TAP_MAX_CONCURRENT_JOBS", "3"))
     
 
 settings = Settings()

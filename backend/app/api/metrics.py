@@ -1,193 +1,163 @@
+from __future__ import annotations
+
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query
 
 from app.db import get_db
-from app.schemas import MetricSnapshotUpsert
-from app.services.metrics import (
-    mark_metric_sync_failed,
-    mark_metric_sync_started,
-    mark_metric_sync_success,
-    upsert_metric_snapshot,
-)
+from app.models.metric import MetricSnapshot, MetricSyncStatus
+from app.repositories.metric_repo import MetricRepository
+from app.repositories.run_repo import RunRepository
+from app.schemas import MetricSnapshotUpsert, MetricSnapshotResponse, MetricPointResponse, MetricSyncStatusResponse
 from app.services.wandb_client import get_run_snapshot
-from app.services.metrics import ensure_metric_sync_status_table
+
 
 router = APIRouter(tags=["metrics"])
 
 
-def ensure_run_exists(run_id: str) -> None:
+def _require_run(run_id: str) -> None:
     with get_db() as conn:
-        row = conn.execute(
-            "SELECT run_id FROM runs WHERE run_id = ?",
-            (run_id,),
-        ).fetchone()
+        if RunRepository(conn).find(run_id) is None:
+            raise HTTPException(status_code=404, detail=f"Run '{run_id}' not found")
 
-    if row is None:
-        raise HTTPException(status_code=404, detail=f"Run '{run_id}' not found")
 
 @router.put("/runs/{run_id}/metrics")
-def upsert_metrics(run_id: str, payload: MetricSnapshotUpsert) -> dict[str, Any]:
-    ensure_run_exists(run_id)
-
-    metrics = payload.model_dump() if hasattr(payload, "model_dump") else payload.dict()
-    metrics["source"] = "manual"
+def upsert_metrics(run_id: str, payload: MetricSnapshotUpsert) -> MetricSnapshotResponse:
+    _require_run(run_id)
 
     with get_db() as conn:
-        row = upsert_metric_snapshot(conn, run_id, metrics)
+        repo = MetricRepository(conn)
+        snapshot = MetricSnapshot(
+            run_id=run_id,
+            current_step=payload.current_step,
+            current_epoch=payload.current_epoch,
+            training_loss=payload.training_loss,
+            validation_loss=payload.validation_loss,
+            runtime=payload.runtime,
+            learning_rate=payload.learning_rate,
+            latest_metric_timestamp=payload.latest_metric_timestamp,
+        )
+        saved = repo.upsert_snapshot(snapshot)
+        sync = MetricSyncStatus(
+            run_id=run_id,
+            source="manual",
+            status="success",
+            last_finished_at=MetricRepository._utc_now(),
+            points_synced=1,
+        )
+        repo.upsert_sync_status(sync)
 
-        if row is None:
-            raise HTTPException(status_code=500, detail="Metric upsert failed")
+    return MetricSnapshotResponse.from_domain(saved)
 
-        mark_metric_sync_success(conn, run_id, "manual", 1)
-
-    return row
 
 @router.get("/runs/{run_id}/metrics")
-def get_metrics(run_id: str) -> dict[str, Any]:
-    ensure_run_exists(run_id)
+def get_metrics(run_id: str) -> MetricSnapshotResponse:
+    _require_run(run_id)
 
     with get_db() as conn:
-        row = conn.execute(
-            "SELECT * FROM metrics WHERE run_id = ?",
-            (run_id,),
-        ).fetchone()
-
-    if row is None:
-        raise HTTPException(
-            status_code=404,
-            detail=f"No metrics found for run '{run_id}'",
-        )
-
-    return dict(row)
+        snapshot = MetricRepository(conn).find_snapshot(run_id)
+    if snapshot is None:
+        raise HTTPException(status_code=404, detail=f"No metrics found for run '{run_id}'")
+    return MetricSnapshotResponse.from_domain(snapshot)
 
 
 @router.get("/runs/{run_id}/metrics/history")
 def get_metric_history(
     run_id: str,
     limit: int = Query(default=500, ge=1, le=10_000),
-) -> list[dict[str, Any]]:
-    ensure_run_exists(run_id)
+) -> list[MetricPointResponse]:
+    _require_run(run_id)
 
     with get_db() as conn:
-        rows = conn.execute(
-            """
-            SELECT
-                step,
-                epoch,
-                training_loss,
-                validation_loss,
-                runtime,
-                learning_rate,
-                source,
-                created_at
-            FROM metric_points
-            WHERE run_id = ?
-            ORDER BY step ASC, created_at ASC
-            LIMIT ?
-            """,
-            (run_id, limit),
-        ).fetchall()
-
-    return [dict(row) for row in rows]
+        points = MetricRepository(conn).list_history(run_id, limit=limit)
+    return [MetricPointResponse.from_domain(p) for p in points]
 
 
 @router.post("/runs/{run_id}/sync-wandb")
 def sync_metrics_from_wandb(run_id: str) -> dict[str, Any]:
-    ensure_run_exists(run_id)
+    _require_run(run_id)
 
     with get_db() as conn:
-        run_row = conn.execute(
-            "SELECT * FROM runs WHERE run_id = ?",
-            (run_id,),
-        ).fetchone()
+        run = RunRepository(conn).find(run_id)
 
-    if run_row is None:
-        raise HTTPException(status_code=404, detail=f"Run '{run_id}' not found")
-
-    wandb_run_id = run_row["wandb_run_id"]
+    wandb_run_id = run.wandb_run_id if run else None  # type: ignore[union-attr]
     if not wandb_run_id:
-        error_message = "No wandb_run_id stored for this run"
+        error_msg = "No wandb_run_id stored for this run"
         with get_db() as conn:
-            mark_metric_sync_failed(conn, run_id, "wandb", error_message)
-
-        raise HTTPException(
-            status_code=400,
-            detail=error_message,
-        )
+            repo = MetricRepository(conn)
+            repo.upsert_sync_status(MetricSyncStatus(
+                run_id=run_id, source="wandb", status="failed",
+                last_finished_at=MetricRepository._utc_now(), error_message=error_msg,
+            ))
+        raise HTTPException(status_code=400, detail=error_msg)
 
     with get_db() as conn:
-        mark_metric_sync_started(conn, run_id, "wandb")
+        repo = MetricRepository(conn)
+        repo.upsert_sync_status(MetricSyncStatus(
+            run_id=run_id, source="wandb", status="syncing",
+            last_started_at=MetricRepository._utc_now(),
+        ))
+
     try:
-        snapshot = get_run_snapshot(wandb_run_id)
+        wandb_snapshot = get_run_snapshot(wandb_run_id)
     except Exception as exc:
-        error_message = f"W&B sync failed: {str(exc)}"
+        error_msg = f"W&B sync failed: {exc}"
         with get_db() as conn:
-            mark_metric_sync_failed(conn, run_id, "wandb", error_message)
-        raise HTTPException(status_code=500, detail=error_message)
+            MetricRepository(conn).upsert_sync_status(MetricSyncStatus(
+                run_id=run_id, source="wandb", status="failed",
+                last_finished_at=MetricRepository._utc_now(), error_message=error_msg,
+            ))
+        raise HTTPException(status_code=500, detail=error_msg)
 
-    metrics = dict(snapshot["metrics"])
-    metrics["source"] = "wandb"
+    metrics_dict = dict(wandb_snapshot["metrics"])
+    metrics_dict["source"] = "wandb"
 
     with get_db() as conn:
-        updated_metrics = upsert_metric_snapshot(conn, run_id, metrics)
+        repo = MetricRepository(conn)
+        run_repo = RunRepository(conn)
 
-        current_status = run_row["status"]
-        new_status = snapshot["tap_status"]
+        snapshot = MetricSnapshot(
+            run_id=run_id,
+            current_step=metrics_dict.get("current_step"),
+            current_epoch=metrics_dict.get("current_epoch"),
+            training_loss=metrics_dict.get("training_loss"),
+            validation_loss=metrics_dict.get("validation_loss"),
+            runtime=metrics_dict.get("runtime"),
+            learning_rate=metrics_dict.get("learning_rate"),
+        )
+        saved_snapshot = repo.upsert_snapshot(snapshot)
 
-        if current_status != "cancelled":
-            conn.execute(
-                "UPDATE runs SET status = ? WHERE run_id = ?",
-                (new_status, run_id),
-            )
+        current_run = run_repo.find(run_id)
+        new_status = wandb_snapshot["tap_status"]
+        if current_run and current_run.status != "cancelled":
+            run_repo.update_status(run_id, new_status)
 
-        points_synced_row = conn.execute(
-            """
-            SELECT COUNT(*) AS count
-            FROM metric_points
-            WHERE run_id = ?
-            AND source = ?
-            """,
-            (run_id, "wandb"),
-        ).fetchone()
-
-        points_synced = int(points_synced_row["count"] if points_synced_row else 0)
-        mark_metric_sync_success(conn, run_id, "wandb", points_synced)
+        points_synced = repo.count_points(run_id, "wandb")
+        repo.upsert_sync_status(MetricSyncStatus(
+            run_id=run_id, source="wandb", status="success",
+            last_finished_at=MetricRepository._utc_now(), points_synced=points_synced,
+        ))
 
     return {
         "run_id": run_id,
         "wandb_run_id": wandb_run_id,
-        "wandb_state": snapshot["wandb_state"],
-        "wandb_url": snapshot["url"],
-        "metrics": updated_metrics,
+        "wandb_state": wandb_snapshot["wandb_state"],
+        "wandb_url": wandb_snapshot["url"],
+        "metrics": MetricSnapshotResponse.from_domain(saved_snapshot).model_dump(),
     }
 
 
 @router.get("/runs/{run_id}/metrics/sync-status")
-def get_metric_sync_status(run_id: str) -> dict[str, Any]:
-    ensure_run_exists(run_id)
+def get_metric_sync_status(run_id: str) -> MetricSyncStatusResponse:
+    _require_run(run_id)
 
     with get_db() as conn:
-        ensure_metric_sync_status_table(conn)
+        status = MetricRepository(conn).find_sync_status(run_id)
 
-        row = conn.execute(
-            """
-            SELECT *
-            FROM metric_sync_status
-            WHERE run_id = ?
-            """,
-            (run_id,),
-        ).fetchone()
-
-    if row is None:
-        return {
-            "run_id": run_id,
-            "source": None,
-            "status": "never_synced",
-            "last_started_at": None,
-            "last_finished_at": None,
-            "error_message": None,
-            "points_synced": 0,
-        }
-
-    return dict(row)
+    if status is None:
+        return MetricSyncStatusResponse(
+            run_id=run_id, source=None, status="never_synced",
+            last_started_at=None, last_finished_at=None,
+            error_message=None, points_synced=0,
+        )
+    return MetricSyncStatusResponse.from_domain(status)

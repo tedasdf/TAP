@@ -2,12 +2,12 @@ import sqlite3
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Iterator
-from datetime import datetime, timezone
-from uuid import uuid4
+
 from app.config import settings
 
 
 DB_PATH = Path(settings.TAP_DB_PATH)
+
 
 def _ensure_db_parent() -> None:
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
@@ -45,7 +45,8 @@ def init_db() -> None:
                 created_at TEXT NOT NULL,
                 last_checked_at TEXT,
                 error_message TEXT,
-                config_snapshot_json TEXT
+                config_snapshot_json TEXT,
+                template_id TEXT
             )
             """
         )
@@ -128,6 +129,21 @@ def init_db() -> None:
 
         conn.execute(
             """
+            CREATE TABLE IF NOT EXISTS metric_sync_status (
+                run_id TEXT PRIMARY KEY,
+                source TEXT,
+                status TEXT NOT NULL,
+                last_started_at TEXT,
+                last_finished_at TEXT,
+                error_message TEXT,
+                points_synced INTEGER NOT NULL DEFAULT 0,
+                FOREIGN KEY (run_id) REFERENCES runs(run_id) ON DELETE CASCADE
+            )
+            """
+        )
+
+        conn.execute(
+            """
             CREATE TABLE IF NOT EXISTS notifications (
                 notification_id TEXT PRIMARY KEY,
                 event_type TEXT NOT NULL,
@@ -144,82 +160,47 @@ def init_db() -> None:
             """
         )
 
-        existing_notification_columns = {
-            row["name"]
-            for row in conn.execute("PRAGMA table_info(notifications)").fetchall()
-        }
-
-        if "severity" not in existing_notification_columns:
-            conn.execute(
-                "ALTER TABLE notifications ADD COLUMN severity TEXT NOT NULL DEFAULT 'info'"
-            )
-
-        if "title" not in existing_notification_columns:
-            conn.execute(
-                "ALTER TABLE notifications ADD COLUMN title TEXT NOT NULL DEFAULT 'Notification'"
-            )
-
-        existing_run_columns = {
-            row["name"]
-            for row in conn.execute("PRAGMA table_info(runs)").fetchall()
-        }
-
-        if "config_snapshot_json" not in existing_run_columns:
-            conn.execute(
-                "ALTER TABLE runs ADD COLUMN config_snapshot_json TEXT"
-            )
-        
-
-def create_notification(
-    *,
-    event_type: str,
-    severity: str,
-    title: str,
-    message: str,
-    run_id: str | None = None,
-    job_id: str | None = None,
-) -> sqlite3.Row:
-    notification_id = str(uuid4())
-    timestamp = datetime.now(timezone.utc).isoformat()
-
-    with get_db() as conn:
         conn.execute(
             """
-            INSERT INTO notifications (
-                notification_id,
-                event_type,
-                severity,
-                title,
-                message,
-                run_id,
-                job_id,
-                timestamp,
-                read_state
+            CREATE TABLE IF NOT EXISTS templates (
+                template_id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                description TEXT NOT NULL DEFAULT '',
+                params_json TEXT,
+                created_at TEXT NOT NULL
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)
-            """,
-            (
-                notification_id,
-                event_type,
-                severity,
-                title,
-                message,
-                run_id,
-                job_id,
-                timestamp,
-            ),
+            """
         )
 
-        notification = conn.execute(
+        conn.execute(
             """
-            SELECT *
-            FROM notifications
-            WHERE notification_id = ?
-            """,
-            (notification_id,),
-        ).fetchone()
+            CREATE TABLE IF NOT EXISTS template_runs (
+                id TEXT PRIMARY KEY,
+                template_id TEXT NOT NULL,
+                run_id TEXT NOT NULL,
+                combo_index INTEGER NOT NULL DEFAULT 0,
+                FOREIGN KEY (template_id) REFERENCES templates(template_id) ON DELETE CASCADE,
+                FOREIGN KEY (run_id) REFERENCES runs(run_id) ON DELETE CASCADE
+            )
+            """
+        )
 
-        if notification is None:
-            raise RuntimeError("Failed to create notification")
+        _run_migrations(conn)
 
-        return notification
+
+def _run_migrations(conn: sqlite3.Connection) -> None:
+    existing_notif_cols = {
+        row["name"] for row in conn.execute("PRAGMA table_info(notifications)").fetchall()
+    }
+    if "severity" not in existing_notif_cols:
+        conn.execute("ALTER TABLE notifications ADD COLUMN severity TEXT NOT NULL DEFAULT 'info'")
+    if "title" not in existing_notif_cols:
+        conn.execute("ALTER TABLE notifications ADD COLUMN title TEXT NOT NULL DEFAULT 'Notification'")
+
+    existing_run_cols = {
+        row["name"] for row in conn.execute("PRAGMA table_info(runs)").fetchall()
+    }
+    if "config_snapshot_json" not in existing_run_cols:
+        conn.execute("ALTER TABLE runs ADD COLUMN config_snapshot_json TEXT")
+    if "template_id" not in existing_run_cols:
+        conn.execute("ALTER TABLE runs ADD COLUMN template_id TEXT")

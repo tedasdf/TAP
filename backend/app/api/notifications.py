@@ -1,166 +1,78 @@
-from typing import Any
+from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException, Query
 
 from app.db import get_db
-from app.schemas import NotificationCreate
+from app.models.notification import Notification
+from app.repositories.job_repo import JobRepository
+from app.repositories.notification_repo import NotificationRepository
+from app.repositories.run_repo import RunRepository
+from app.schemas import NotificationCreate, NotificationResponse
 from app.services.notifications import send_discord_message
 
+
 router = APIRouter(tags=["notifications"])
-
-
-def ensure_notification_exists(notification_id: str) -> dict[str, Any]:
-    with get_db() as conn:
-        row = conn.execute(
-            "SELECT * FROM notifications WHERE notification_id = ?",
-            (notification_id,),
-        ).fetchone()
-
-    if row is None:
-        raise HTTPException(status_code=404, detail="Notification not found")
-
-    return dict(row)
-
-
-def ensure_run_exists(run_id: str) -> None:
-    with get_db() as conn:
-        row = conn.execute(
-            "SELECT run_id FROM runs WHERE run_id = ?",
-            (run_id,),
-        ).fetchone()
-
-    if row is None:
-        raise HTTPException(status_code=404, detail=f"Run '{run_id}' not found")
-
-
-def ensure_job_exists(job_id: str) -> None:
-    with get_db() as conn:
-        row = conn.execute(
-            "SELECT job_id FROM jobs WHERE job_id = ?",
-            (job_id,),
-        ).fetchone()
-
-    if row is None:
-        raise HTTPException(status_code=404, detail=f"Job '{job_id}' not found")
 
 
 @router.get("/notifications")
 def list_notifications(
     unread_only: bool = Query(default=False),
-) -> list[dict[str, Any]]:
+) -> list[NotificationResponse]:
     with get_db() as conn:
-        if unread_only:
-            rows = conn.execute(
-                """
-                SELECT *
-                FROM notifications
-                WHERE read_state = 0
-                ORDER BY datetime(timestamp) DESC
-                """
-            ).fetchall()
-        else:
-            rows = conn.execute(
-                """
-                SELECT *
-                FROM notifications
-                ORDER BY datetime(timestamp) DESC
-                """
-            ).fetchall()
+        notifications = NotificationRepository(conn).list_all(unread_only=unread_only)
+    return [NotificationResponse.from_domain(n) for n in notifications]
 
-    return [dict(row) for row in rows]
 
 @router.post("/notifications")
-def create_notification(payload: NotificationCreate) -> dict[str, Any]:
-    from datetime import datetime, timezone
-    import uuid
-
-    if payload.run_id:
-        ensure_run_exists(payload.run_id)
-
-    if payload.job_id:
-        ensure_job_exists(payload.job_id)
-
-    notification_id = str(uuid.uuid4())
-    timestamp = datetime.now(timezone.utc).isoformat()
-
+def create_notification(payload: NotificationCreate) -> dict:
     with get_db() as conn:
-        conn.execute(
-            """
-            INSERT INTO notifications (
-                notification_id,
-                event_type,
-                message,
-                run_id,
-                job_id,
-                timestamp,
-                read_state
-            )
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                notification_id,
-                payload.event_type,
-                payload.message,
-                payload.run_id,
-                payload.job_id,
-                timestamp,
-                0,
-            ),
-        )
+        if payload.run_id and RunRepository(conn).find(payload.run_id) is None:
+            raise HTTPException(status_code=404, detail=f"Run '{payload.run_id}' not found")
+        if payload.job_id and JobRepository(conn).find(payload.job_id) is None:
+            raise HTTPException(status_code=404, detail=f"Job '{payload.job_id}' not found")
 
-        row = conn.execute(
-            "SELECT * FROM notifications WHERE notification_id = ?",
-            (notification_id,),
-        ).fetchone()
+        repo = NotificationRepository(conn)
+        notification = Notification(
+            notification_id=NotificationRepository._new_id(),
+            event_type=payload.event_type,
+            severity="info",
+            title="Notification",
+            message=payload.message,
+            timestamp=NotificationRepository._utc_now(),
+            run_id=payload.run_id,
+            job_id=payload.job_id,
+        )
+        saved = repo.create(notification)
 
     discord_ok = send_discord_message(payload.message)
-
-    result = dict(row)
+    result = NotificationResponse.from_domain(saved).model_dump()
     result["discord_sent"] = discord_ok
     return result
 
-@router.post("/notifications/test")
-def create_test_notification() -> dict[str, Any]:
-    payload = NotificationCreate(
-        event_type="test",
-        message="TAP test notification",
-    )
-    return create_notification(payload)
 
+@router.post("/notifications/test")
+def create_test_notification() -> dict:
+    return create_notification(NotificationCreate(event_type="test", message="TAP test notification"))
 
 
 @router.patch("/notifications/{notification_id}/read")
-def mark_notification_read(notification_id: str) -> dict[str, Any]:
-    ensure_notification_exists(notification_id)
-
+def mark_notification_read(notification_id: str) -> NotificationResponse:
     with get_db() as conn:
-        conn.execute(
-            "UPDATE notifications SET read_state = 1 WHERE notification_id = ?",
-            (notification_id,),
-        )
+        repo = NotificationRepository(conn)
+        if repo.find(notification_id) is None:
+            raise HTTPException(status_code=404, detail="Notification not found")
+        repo.mark_read(notification_id)
+        notification = repo.find(notification_id)
+    return NotificationResponse.from_domain(notification)  # type: ignore[arg-type]
 
-        row = conn.execute(
-            "SELECT * FROM notifications WHERE notification_id = ?",
-            (notification_id,),
-        ).fetchone()
-
-    return dict(row)
 
 @router.post("/notifications/{notification_id}/read")
-def mark_notification_read_post(notification_id: str) -> dict[str, Any]:
+def mark_notification_read_post(notification_id: str) -> NotificationResponse:
     return mark_notification_read(notification_id)
+
 
 @router.post("/notifications/read-all")
 def mark_all_notifications_read() -> dict[str, int]:
     with get_db() as conn:
-        result = conn.execute(
-            """
-            UPDATE notifications
-            SET read_state = 1
-            WHERE read_state = 0
-            """
-        )
-
-    return {
-        "updated": result.rowcount if result.rowcount is not None else 0,
-    }
+        updated = NotificationRepository(conn).mark_all_read()
+    return {"updated": updated}
