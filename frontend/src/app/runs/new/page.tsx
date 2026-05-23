@@ -1,23 +1,24 @@
 "use client";
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { Suspense, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { AppShell } from "@/components/layout/app-shell";
 import { useCreateRun } from "@/lib/hooks/use-runs";
 
-export default function CreateRunPage() {
+function CreateRunForm() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const createRunMutation = useCreateRun();
 
   const [name, setName] = useState("");
-  const [configPath, setConfigPath] = useState("");
+  const [configPath, setConfigPath] = useState(searchParams.get("configPath") ?? "");
   const [configOverrides, setConfigOverrides] = useState("");
   const [wandbConfigRef, setWandbConfigRef] = useState("");
   const [formError, setFormError] = useState<string | null>(null);
 
   const isSubmitting = createRunMutation.isPending;
 
-  async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
+  async function handleSubmit(e: React.SyntheticEvent<HTMLFormElement>) {
     e.preventDefault();
     setFormError(null);
 
@@ -145,5 +146,13 @@ export default function CreateRunPage() {
         </form>
       </div>
     </AppShell>
+  );
+}
+
+export default function CreateRunPage() {
+  return (
+    <Suspense>
+      <CreateRunForm />
+    </Suspense>
   );
 }

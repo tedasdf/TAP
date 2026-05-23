@@ -43,6 +43,7 @@ function buildOverviewRun(run: ApiRun, metrics?: ApiRunMetrics) {
       metrics?.latest_metric_timestamp ?? run.latest_metric_timestamp ?? undefined,
     configOverrides: run.config_overrides ?? undefined,
     errorMessage: run.error_message ?? undefined,
+    templateId: run.template_id ?? undefined,
   };
 }
 

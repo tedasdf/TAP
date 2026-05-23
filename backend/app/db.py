@@ -29,6 +29,7 @@ def get_db() -> Iterator[sqlite3.Connection]:
     _ensure_db_parent()
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA journal_mode = WAL")
     conn.execute("PRAGMA foreign_keys = ON")
     try:
         yield conn
@@ -56,7 +57,8 @@ def init_db() -> None:
                 wandb_run_id TEXT,
                 created_at TEXT NOT NULL,
                 last_checked_at TEXT,
-                error_message TEXT
+                error_message TEXT,
+                template_id TEXT REFERENCES templates(template_id)
             )
             """
         )
@@ -123,6 +125,29 @@ def init_db() -> None:
                 read_state INTEGER NOT NULL DEFAULT 0,
                 FOREIGN KEY (run_id) REFERENCES runs(run_id) ON DELETE CASCADE,
                 FOREIGN KEY (job_id) REFERENCES jobs(job_id) ON DELETE CASCADE
+            )
+            """
+        )
+
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS templates (
+                template_id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                description TEXT,
+                params_json TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            )
+            """
+        )
+
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS template_runs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                template_id TEXT NOT NULL REFERENCES templates(template_id),
+                run_id TEXT NOT NULL REFERENCES runs(run_id),
+                combo_index INTEGER NOT NULL
             )
             """
         )

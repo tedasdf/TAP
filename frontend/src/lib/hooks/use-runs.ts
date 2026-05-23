@@ -1,9 +1,8 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { cancelRun, createRun, getRun, getRunMetrics, getRuns, syncWandb } from "@/lib/api/runs";
+import { cancelRun, createRun, deleteRun, getRun, getRunMetrics, getRuns, refreshRun, syncWandb } from "@/lib/api/runs";
 import { CreateRunPayload } from "@/lib/types/api";
-import { refreshRun } from "@/lib/api/runs";
 
 
 export function useRuns() {
@@ -69,5 +68,16 @@ export function useCreateRun() {
 export function useRefreshRun() {
   return useMutation({
     mutationFn: refreshRun,
+  });
+}
+
+export function useDeleteRun() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (runId: string) => deleteRun(runId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["runs"] });
+    },
   });
 }

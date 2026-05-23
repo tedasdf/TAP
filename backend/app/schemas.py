@@ -1,5 +1,5 @@
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -59,3 +59,87 @@ class NotificationCreate(BaseModel):
     message: str
     run_id: str | None = None
     job_id: str | None = None
+
+
+class ParamFixed(BaseModel):
+    role: Literal["fixed"]
+    value: str | int | float
+
+
+class ParamVary(BaseModel):
+    role: Literal["vary"]
+    values: list[str | int | float]
+
+
+class ParamDerive(BaseModel):
+    role: Literal["derive"]
+    expr: str
+    from_param: str = Field(alias="from")
+
+    model_config = {"populate_by_name": True}
+
+
+class CreateTemplateRequest(BaseModel):
+    name: str
+    description: str | None = None
+    params: dict[str, ParamFixed | ParamVary | ParamDerive]
+
+
+class TemplateResponse(BaseModel):
+    template_id: str
+    name: str
+    description: str | None
+    params: dict
+    created_at: str
+    run_count: int
+
+
+class TemplateListResponse(BaseModel):
+    templates: list[TemplateResponse]
+
+
+class TemplateSummaryResponse(TemplateResponse):
+    runs: list[dict]
+
+
+class RunCombo(BaseModel):
+    combo_index: int
+    params: dict[str, str | int | float]
+    derive_trace: dict[str, str]
+
+
+class PreviewResponse(BaseModel):
+    template_id: str
+    total_runs: int
+    combos: list[RunCombo]
+
+
+class LaunchTemplateRequest(BaseModel):
+    git_commit: str | None = None
+    max_steps: int | None = None
+    dry_run: bool = False
+
+
+class LaunchResponse(BaseModel):
+    template_id: str
+    total: int
+    launched: int
+    failed: int
+    runs: list[dict]
+
+
+class TemplateRunItem(BaseModel):
+    run_id: str
+    name: str
+    combo_index: int
+    status: str
+    slurm_job_id: str | None
+    created_at: str
+    params: dict
+    metrics: dict | None
+
+
+class TemplateRunsResponse(BaseModel):
+    template_id: str
+    template_name: str
+    runs: list[TemplateRunItem]

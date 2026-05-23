@@ -21,6 +21,7 @@ export type ApiRun = {
   created_at: string;
   last_checked_at?: string | null;
   error_message?: string | null;
+  template_id?: string | null;
 
   // optional summary fields if backend includes them
   current_step?: number | null;
@@ -83,4 +84,69 @@ export type ApiRunRefreshResponse = {
     new_status?: string;
     source?: string;
   };
+};
+
+export type ParamSpec =
+  | { role: "fixed"; value: string | number }
+  | { role: "vary"; values: (string | number)[] }
+  | { role: "derive"; expr: string; from: string };
+
+export type ApiTemplate = {
+  template_id: string;
+  name: string;
+  description: string | null;
+  params: Record<string, ParamSpec>;
+  created_at: string;
+  run_count: number;
+};
+
+export type ApiTemplateSummary = ApiTemplate & {
+  runs: Array<{
+    run_id: string;
+    name: string;
+    status: string;
+    combo_index: number;
+    created_at: string;
+  }>;
+};
+
+export type CreateTemplatePayload = {
+  name: string;
+  description?: string | null;
+  params: Record<string, ParamSpec>;
+};
+
+export type ApiTemplateRunItem = {
+  run_id: string;
+  name: string;
+  combo_index: number;
+  status: string;
+  slurm_job_id: string | null;
+  created_at: string;
+  params: Record<string, string | number>;
+  metrics: {
+    training_loss: number | null;
+    validation_loss: number | null;
+    learning_rate: number | null;
+    current_step: number | null;
+    latest_metric_timestamp: string | null;
+  } | null;
+};
+
+export type ApiTemplateRunsResponse = {
+  template_id: string;
+  template_name: string;
+  runs: ApiTemplateRunItem[];
+};
+
+export type ApiRunCombo = {
+  combo_index: number;
+  params: Record<string, string | number>;
+  derive_trace: Record<string, string>;
+};
+
+export type ApiPreviewResponse = {
+  template_id: string;
+  total_runs: number;
+  combos: ApiRunCombo[];
 };

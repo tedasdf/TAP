@@ -18,28 +18,10 @@ from app.services.launcher import (
     build_remote_error_log_path,
     build_remote_log_path,
     launch_training_run,
+    resolve_remote_training_git_commit,
     run_ssh_command,
 )
 from app.services.run_events import create_run_event
-
-def resolve_remote_training_git_commit() -> tuple[str | None, str | None]:
-    remote_repo_path = settings.TAP_M3_REPO_PATH
-
-    if not remote_repo_path:
-        return None, "settings.TAP_M3_REPO_PATH is empty"
-
-    command = f"cd {shlex.quote(remote_repo_path)} && git rev-parse HEAD"
-    code, stdout, stderr = run_ssh_command(command)
-
-    if code != 0:
-        return None, stderr or f"Remote git command failed with exit code {code}"
-
-    commit = stdout.strip()
-
-    if not commit:
-        return None, "Remote git command succeeded but returned empty stdout"
-
-    return commit, None
 
 router = APIRouter(tags=["runs"])
 
@@ -563,3 +545,11 @@ def cancel_run(run_id: str) -> dict[str, str]:
         )
 
     return {"run_id": run_id, "status": "cancelled"}
+
+
+@router.delete("/runs/{run_id}", status_code=204)
+def delete_run(run_id: str) -> None:
+    ensure_run_exists(run_id)
+
+    with get_db() as conn:
+        conn.execute("DELETE FROM runs WHERE run_id = ?", (run_id,))

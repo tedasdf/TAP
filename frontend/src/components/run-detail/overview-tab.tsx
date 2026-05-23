@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { RunCardView } from "@/lib/types/view";
 import { StatusBadge } from "@/components/shared/status-badge";
 
@@ -8,7 +9,8 @@ type OverviewTabProps = {
     createdAt?: string;
     latestMetricTimestamp?: string;
     learningRate?: number;
-    configOverrides?: string;
+    configOverrides?: Record<string, unknown> | string | null;
+    templateId?: string | null;
   };
 };
 
@@ -96,6 +98,18 @@ export function OverviewTab({ run }: OverviewTabProps) {
             <span className="text-zinc-500">Git Commit</span>
             <span className="text-right text-zinc-200">{run.gitCommit ?? "—"}</span>
           </div>
+
+          {run.templateId ? (
+            <div className="flex justify-between gap-4">
+              <span className="text-zinc-500">From template</span>
+              <Link
+                href={`/templates/${run.templateId}`}
+                className="text-right text-blue-400 hover:underline"
+              >
+                View template
+              </Link>
+            </div>
+          ) : null}
         </div>
       </div>
     </div>

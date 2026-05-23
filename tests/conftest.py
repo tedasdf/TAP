@@ -7,6 +7,7 @@ from fastapi.testclient import TestClient
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
+sys.path.insert(0, str(ROOT / "backend"))
 
 TEST_DB = ROOT / "data" / "test_tap.db"
 os.environ["TAP_DB_PATH"] = str(TEST_DB)
