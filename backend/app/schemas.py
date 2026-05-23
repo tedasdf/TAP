@@ -23,7 +23,7 @@ class RunCreate(BaseModel):
     wandb_config_ref: str | None = None
     wandb_run_id: str | None = None
     launch_now: bool = True
-
+    launch_mode: str = "slurm"  # NEW — "slurm" | "direct"
 
 class JobUpdate(BaseModel):
     queue_state: str | None = None
@@ -82,6 +82,9 @@ class RunResponse(BaseModel):
     created_at: str
     error_message: str | None
     config_snapshot: dict[str, Any] | None = None
+    launch_mode: str = "slurm"          # NEW
+    direct_pid: int | None = None       # NEW
+    direct_log_path: str | None = None  # NEW
 
     @classmethod
     def from_domain(cls, run: Any) -> RunResponse:
@@ -98,8 +101,10 @@ class RunResponse(BaseModel):
             created_at=run.created_at,
             error_message=run.error_message,
             config_snapshot=run.config_snapshot or None,
+            launch_mode=run.launch_mode,          # NEW
+            direct_pid=run.direct_pid,            # NEW
+            direct_log_path=run.direct_log_path,  # NEW
         )
-
 
 class JobResponse(BaseModel):
     job_id: str

@@ -19,6 +19,8 @@ from app.services.launcher import (
     launch_training_run,
     read_remote_config_file,
     run_ssh_command,
+    launch_direct_run,
+    poll_direct_process,
 )
 from app.services.wandb_client import get_run_snapshot
 
@@ -38,30 +40,32 @@ class RunService:
         self._runs = RunRepository(conn)
 
     def refresh(self, run_id: str) -> Run:
-        """Refresh a single run: update SLURM status, sync W&B metrics, emit events."""
         run = self._runs.find(run_id)
         if run is None:
             raise RunNotFoundError(run_id)
 
         slurm_status: str | None = None
         wandb_status: str | None = None
+        direct_status: str | None = None
 
-        if run.slurm_job_id:
-            slurm_status = self._sync_slurm(run)
-
-        if run.wandb_run_id:
-            wandb_status = self._sync_wandb(run)
-
-        new_status = reconcile_run_status(
-            current_status=run.status,
-            slurm_status=slurm_status,
-            wandb_status=wandb_status,
-        )
+        if run.launch_mode == "direct" and run.direct_pid:
+            direct_status = poll_direct_process(run.direct_pid)
+            new_status = direct_status
+        else:
+            if run.slurm_job_id:
+                slurm_status = self._sync_slurm(run)
+            if run.wandb_run_id:
+                wandb_status = self._sync_wandb(run)
+            new_status = reconcile_run_status(
+                current_status=run.status,
+                slurm_status=slurm_status,
+                wandb_status=wandb_status,
+            )
 
         job = self._runs.jobs.find(run.slurm_job_id) if run.slurm_job_id else None
         self._emit_status_change(run.status, new_status, run, job.job_id if job else None)
-
         self._runs.update_status(run_id, new_status)
+
         refreshed = self._runs.find(run_id)
         assert refreshed is not None
         return refreshed
@@ -119,26 +123,39 @@ class RunService:
         error_log_path: str | None = None
 
         if payload.launch_now:
-            code, stdout, stderr, slurm_job_id = launch_training_run(
-                run_name=payload.name,
-                git_commit=git_commit,
-                config_path=payload.config_path,
-                config_overrides=payload.config_overrides,
-                submit_script=payload.submit_script,
-            )
-            combined = "\n".join(p for p in [stdout, stderr] if p)
-            if code == 0 and slurm_job_id:
-                status = "queued"
-                log_path = build_remote_log_path(payload.name, slurm_job_id)
-                error_log_path = build_remote_error_log_path(payload.name, slurm_job_id)
-            elif code == 0:
-                status = "created"
-                error_message = "Launch succeeded but no Slurm job ID was parsed"
-                slurm_job_id = None
+            if payload.launch_mode == "direct":
+                code, stdout, stderr, pid, direct_log_path = launch_direct_run(
+                    run_name=payload.name,
+                    git_commit=git_commit,
+                    config_path=payload.config_path,
+                    config_overrides=payload.config_overrides,
+                )
+                if code == 0 and pid:
+                    status = "running"  # direct runs start immediately, no queue
+                else:
+                    status = "failed"
+                    error_message = stderr or f"Direct launch failed with exit code {code}"
             else:
-                status = "failed"
-                error_message = combined or f"Launch failed with exit code {code}"
-
+                code, stdout, stderr, slurm_job_id = launch_training_run(
+                    run_name=payload.name,
+                    git_commit=git_commit,
+                    config_path=payload.config_path,
+                    config_overrides=payload.config_overrides,
+                    submit_script=payload.submit_script,
+                )
+                combined = "\n".join(p for p in [stdout, stderr] if p)
+                if code == 0 and slurm_job_id:
+                    status = "queued"
+                    log_path = build_remote_log_path(payload.name, slurm_job_id)
+                    error_log_path = build_remote_error_log_path(payload.name, slurm_job_id)
+                elif code == 0:
+                    status = "created"
+                    error_message = "Launch succeeded but no Slurm job ID was parsed"
+                    slurm_job_id = None
+                else:
+                    status = "failed"
+                    error_message = combined or f"Launch failed with exit code {code}"
+        
         config_file_snapshot = read_remote_config_file(payload.config_path)
         config_snapshot = _build_config_snapshot(
             payload=payload,
@@ -163,7 +180,11 @@ class RunService:
             slurm_job_id=slurm_job_id,
             wandb_run_id=payload.wandb_run_id,
             error_message=error_message,
+            launch_mode=payload.launch_mode,
+            direct_pid=pid if payload.launch_mode == "direct" else None,
+            direct_log_path=direct_log_path if payload.launch_mode == "direct" else None,        
         )
+
         created_run = self._runs.create(run)
 
         self._runs.events.create(RunEvent(

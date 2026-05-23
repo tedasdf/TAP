@@ -8,7 +8,6 @@ from typing import Any
 _ACTIVE_STATUSES = frozenset({"created", "queued", "running", "unknown"})
 _TERMINAL_STATUSES = frozenset({"completed", "failed", "cancelled"})
 
-
 @dataclass
 class Run:
     run_id: str
@@ -25,6 +24,9 @@ class Run:
     template_id: str | None = None
     last_checked_at: str | None = None
     error_message: str | None = None
+    launch_mode: str = "slurm"          # NEW
+    direct_pid: int | None = None       # NEW
+    direct_log_path: str | None = None  # NEW
 
     @classmethod
     def from_row(cls, row: Any) -> Run:
@@ -46,6 +48,9 @@ class Run:
             template_id=d.get("template_id"),
             last_checked_at=d.get("last_checked_at"),
             error_message=d.get("error_message"),
+            launch_mode=d.get("launch_mode") or "slurm",   # NEW
+            direct_pid=d.get("direct_pid"),                 # NEW
+            direct_log_path=d.get("direct_log_path"),       # NEW
         )
 
     @property

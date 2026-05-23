@@ -77,29 +77,24 @@ class RunRepository(BaseRepository):
                 run_id, name, status, git_commit, config_path,
                 config_overrides, wandb_config_ref, slurm_job_id,
                 wandb_run_id, created_at, last_checked_at, error_message,
-                config_snapshot_json, template_id
+                config_snapshot_json, template_id,
+                launch_mode, direct_pid, direct_log_path
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
-                run.run_id,
-                run.name,
-                run.status,
-                run.git_commit,
+                run.run_id, run.name, run.status, run.git_commit,
                 run.config_path,
                 json.dumps(run.config_overrides, ensure_ascii=False),
-                run.wandb_config_ref,
-                run.slurm_job_id,
-                run.wandb_run_id,
-                run.created_at,
-                run.last_checked_at,
-                run.error_message,
+                run.wandb_config_ref, run.slurm_job_id, run.wandb_run_id,
+                run.created_at, run.last_checked_at, run.error_message,
                 json.dumps(run.config_snapshot, ensure_ascii=False),
                 run.template_id,
+                run.launch_mode, run.direct_pid, run.direct_log_path,  # NEW
             ),
         )
         return self.find(run.run_id)  # type: ignore[return-value]
-
+    
     def update_status(
         self,
         run_id: str,

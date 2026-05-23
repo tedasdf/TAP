@@ -175,3 +175,67 @@ def launch_training_run(
     job_id = parse_slurm_job_id(combined_output)
 
     return code, stdout, stderr, job_id
+
+
+
+def launch_direct_run(
+    *,
+    run_name: str,
+    git_commit: str,
+    config_path: str,
+    config_overrides: dict[str, Any] | None = None,
+    max_steps: int = 50,
+) -> tuple[int, str, str, int | None, str | None]:
+    """
+    Launch a training script directly on M3 via SSH without SLURM.
+    Uses nohup so the process survives if the SSH connection drops.
+    Returns (exit_code, stdout, stderr, pid, log_path).
+    """
+    import json as _json
+    overrides_json = _json.dumps(config_overrides or {}, ensure_ascii=False)
+    log_path = posixpath.join(
+        M3_REPO_PATH, "logs/direct", f"{run_name}.out"
+    )
+
+    script = f"""
+set -e
+cd {shlex.quote(M3_REPO_PATH)}
+mkdir -p logs/direct
+export TAP_GIT_COMMIT={shlex.quote(git_commit)}
+export CONFIG_PATH={shlex.quote(config_path)}
+export CONFIG_OVERRIDES_JSON={shlex.quote(overrides_json)}
+export TAP_RUN_NAME={shlex.quote(run_name)}
+export MAX_STEPS={max_steps}
+nohup python train.py \\
+    --config {shlex.quote(config_path)} \\
+    --max_steps {max_steps} \\
+    > {shlex.quote(log_path)} 2>&1 &
+echo $!
+""".strip()
+
+    code, stdout, stderr = run_ssh_command(f"bash -lc {shlex.quote(script)}")
+
+    pid: int | None = None
+    if code == 0 and stdout.strip().isdigit():
+        pid = int(stdout.strip())
+
+    return code, stdout, stderr, pid, log_path
+
+
+def poll_direct_process(pid: int) -> str:
+    """
+    Check if a direct (non-SLURM) process is still running on M3.
+    Returns TAP status: 'running', 'completed', or 'failed'.
+    """
+    code, stdout, _ = run_ssh_command(f"ps -p {pid} -o pid= 2>/dev/null")
+    if code == 0 and stdout.strip():
+        return "running"
+
+    # Process is gone — check exit code via wait (won't work for nohup)
+    # Fall back to: check if log has error markers
+    log_code, log_out, _ = run_ssh_command(
+        f"tail -5 $(ls {shlex.quote(posixpath.join(M3_REPO_PATH, 'logs/direct'))}/*.out 2>/dev/null | tail -1) 2>/dev/null || true"
+    )
+    if "Error" in log_out or "Traceback" in log_out:
+        return "failed"
+    return "completed"
