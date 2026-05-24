@@ -92,14 +92,7 @@ export default function RunDetailPage() {
     return buildOverviewRun(runQuery.data, metricsQuery.data);
   }, [runQuery.data, metricsQuery.data]);
 
-  const metricsSeries = useMemo(() => {
-    return (metricHistoryQuery.data ?? []).map((point, index) => ({
-      step: point.step ?? index,
-      trainingLoss: point.training_loss ?? point.train_loss ?? undefined,
-      validationLoss: point.validation_loss ?? point.val_loss ?? undefined,
-      learningRate: point.learning_rate ?? undefined,
-    }));
-  }, [metricHistoryQuery.data]);
+  const metricsSeries = metricHistoryQuery.data ?? [];
 
 
   async function handleCancel() {

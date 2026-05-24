@@ -9,8 +9,10 @@ from app.models.job import Job
 from app.models.metric import MetricPoint, MetricSnapshot, MetricSyncStatus
 from app.models.notification import Notification
 from app.models.run import Run
+from app.repositories.push_repo import PushRepository
 from app.repositories.run_repo import RunRepository
 from app.schemas import RunCreate
+from app.services.push_service import broadcast_push
 from app.services.jobs import derive_run_status, reconcile_run_status, refresh_job_from_slurm
 from app.services.launcher import (
     build_remote_error_log_path,
@@ -22,7 +24,7 @@ from app.services.launcher import (
     launch_direct_run,
     poll_direct_process,
 )
-from app.services.wandb_client import get_run_snapshot
+from app.services.wandb_client import get_run_history_since, get_run_snapshot
 
 
 _STATUS_NOTIFICATION_MAP = {
@@ -38,6 +40,7 @@ class RunService:
 
     def __init__(self, conn: sqlite3.Connection) -> None:
         self._runs = RunRepository(conn)
+        self._push = PushRepository(conn)
 
     def refresh(self, run_id: str) -> Run:
         run = self._runs.find(run_id)
@@ -257,9 +260,9 @@ class RunService:
 
     def _sync_wandb(self, run: Run) -> str | None:
         try:
+            # Snapshot — status + summary metrics for the overview card
             wandb_snapshot = get_run_snapshot(run.wandb_run_id)  # type: ignore[arg-type]
             metrics_dict = dict(wandb_snapshot["metrics"])
-            metrics_dict["source"] = "wandb"
 
             snapshot = MetricSnapshot(
                 run_id=run.run_id,
@@ -273,18 +276,17 @@ class RunService:
             )
             self._runs.metrics.upsert_snapshot(snapshot)
 
-            if snapshot.current_step is not None:
-                point = MetricPoint(
+            # History — fetch every step we haven't stored yet
+            last_step = self._runs.metrics.get_last_step(run.run_id, source="wandb")
+            min_step = (last_step + 1) if last_step is not None else 0
+            new_rows = get_run_history_since(run.wandb_run_id, min_step=min_step)  # type: ignore[arg-type]
+            for row in new_rows:
+                self._runs.metrics.add_point(MetricPoint(
                     run_id=run.run_id,
-                    step=snapshot.current_step,
+                    step=row["step"],
                     source="wandb",
-                    epoch=snapshot.current_epoch,
-                    training_loss=snapshot.training_loss,
-                    validation_loss=snapshot.validation_loss,
-                    runtime=snapshot.runtime,
-                    learning_rate=snapshot.learning_rate,
-                )
-                self._runs.metrics.add_point(point)
+                    metrics=row["metrics"],
+                ))
 
             self._create_metric_alert_notifications(run.run_id, metrics_dict)
 
@@ -367,6 +369,7 @@ class RunService:
             run_id=run_id,
             job_id=job_id,
         ))
+        broadcast_push(self._push.get_all(), title=title, body=f"Run {run_id} {verb}.")
 
     def _create_metric_alert_notifications(
         self,

@@ -7,7 +7,7 @@ from fastapi import HTTPException, APIRouter
 
 from app.db import get_db
 from app.repositories.run_repo import RunRepository
-from app.schemas import RunCreate, RunResponse, RunEventResponse, RunCompareEntry, RunCompareResponse
+from app.schemas import CheckpointPost, RunCreate, RunResponse, RunEventResponse, RunCompareEntry, RunCompareResponse
 from app.services.launcher import run_ssh_command
 from app.services.run_service import RunNotFoundError, RunService
 
@@ -124,6 +124,19 @@ def get_run_logs(run_id: str, tail_lines: int = 300) -> dict[str, Any]:
         "stdout": _read_remote_log(job.log_path, tail_lines=tail_lines),
         "stderr": _read_remote_log(job.error_log_path, tail_lines=tail_lines),
     }
+
+
+@router.post("/runs/{run_id}/checkpoint")
+def post_checkpoint(run_id: str, payload: CheckpointPost) -> dict[str, Any]:
+    with get_db() as conn:
+        run = RunRepository(conn).find(run_id)
+        if run is None:
+            raise HTTPException(status_code=404, detail=f"Run '{run_id}' not found")
+        fields: dict[str, Any] = {"latest_checkpoint_path": payload.checkpoint_path}
+        if payload.is_best:
+            fields["best_checkpoint_path"] = payload.checkpoint_path
+        RunRepository(conn).update(run_id, **fields)
+    return {"run_id": run_id, "checkpoint_path": payload.checkpoint_path, "is_best": payload.is_best}
 
 
 def _logs_response(run_id: str, job_id: str | None, stdout_err: str, stderr_err: str) -> dict[str, Any]:

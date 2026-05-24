@@ -9,6 +9,7 @@ from app.api.notifications import router as notifications_router
 from app.api.system import router as system_router
 from app.api.configs import router as config_router
 from app.api.templates import router as templates_router
+from app.api.push import router as push_router
 from app.api import registry
 from app.services.orchestrator import orchestrator
 
@@ -42,4 +43,5 @@ app.include_router(metrics_router)
 app.include_router(notifications_router)
 app.include_router(config_router)
 app.include_router(templates_router)
+app.include_router(push_router)
 app.include_router(registry.router)

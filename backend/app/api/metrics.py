@@ -8,7 +8,15 @@ from app.db import get_db
 from app.models.metric import MetricSnapshot, MetricSyncStatus
 from app.repositories.metric_repo import MetricRepository
 from app.repositories.run_repo import RunRepository
-from app.schemas import MetricSnapshotUpsert, MetricSnapshotResponse, MetricPointResponse, MetricSyncStatusResponse
+from app.models.metric import MetricPoint
+from app.schemas import (
+    CheckpointPost,
+    MetricPointCreate,
+    MetricPointResponse,
+    MetricSnapshotResponse,
+    MetricSnapshotUpsert,
+    MetricSyncStatusResponse,
+)
 from app.services.wandb_client import get_run_snapshot
 
 
@@ -59,6 +67,27 @@ def get_metrics(run_id: str) -> MetricSnapshotResponse:
     if snapshot is None:
         raise HTTPException(status_code=404, detail=f"No metrics found for run '{run_id}'")
     return MetricSnapshotResponse.from_domain(snapshot)
+
+
+@router.post("/runs/{run_id}/metrics/points")
+def add_metric_point(run_id: str, payload: MetricPointCreate) -> MetricPointResponse:
+    _require_run(run_id)
+
+    with get_db() as conn:
+        repo = MetricRepository(conn)
+        point = MetricPoint(
+            run_id=run_id,
+            step=payload.step,
+            epoch=payload.epoch,
+            source=payload.source,
+            metrics=payload.metrics,
+        )
+        repo.add_point(point)
+        points = repo.list_history(run_id, limit=1)
+
+    if not points or points[-1].step != payload.step:
+        raise HTTPException(status_code=500, detail="Point was not stored")
+    return MetricPointResponse.from_domain(points[-1])
 
 
 @router.get("/runs/{run_id}/metrics/history")

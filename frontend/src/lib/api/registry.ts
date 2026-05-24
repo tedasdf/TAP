@@ -25,3 +25,7 @@ export type SlmRegistry = {
 export function getSlmRegistry() {
   return apiRequest<SlmRegistry>("/registry/slm");
 }
+
+export function refreshRegistry() {
+  return apiRequest<SlmRegistry>("/registry/slm/refresh", { method: "POST" });
+}

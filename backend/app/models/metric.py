@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+import json
+from dataclasses import dataclass, field
 from typing import Any
 
 
@@ -35,27 +36,26 @@ class MetricPoint:
     run_id: str
     step: int
     source: str
+    metrics: dict[str, float] = field(default_factory=dict)
     point_id: str = ""
     epoch: int | None = None
-    training_loss: float | None = None
-    validation_loss: float | None = None
-    runtime: float | None = None
-    learning_rate: float | None = None
     created_at: str | None = None
 
     @classmethod
     def from_row(cls, row: Any) -> MetricPoint:
         d = dict(row)
+        raw = d.get("metrics_json") or "{}"
+        try:
+            metrics = json.loads(raw)
+        except (ValueError, TypeError):
+            metrics = {}
         return cls(
             point_id=d.get("point_id", ""),
             run_id=d["run_id"],
             step=d["step"],
             epoch=d.get("epoch"),
-            training_loss=d.get("training_loss"),
-            validation_loss=d.get("validation_loss"),
-            runtime=d.get("runtime"),
-            learning_rate=d.get("learning_rate"),
             source=d.get("source", "manual"),
+            metrics=metrics,
             created_at=d.get("created_at"),
         )
 

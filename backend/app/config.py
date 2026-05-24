@@ -15,14 +15,18 @@ class Settings:
     TAP_GIT_REMOTE: str = os.environ.get("TAP_GIT_REMOTE", "origin")
     TAP_M3_SUBMIT_SCRIPT: str = os.environ.get("TAP_M3_SUBMIT_SCRIPT", "scripts/slurm/test.slurm")
     TAP_M3_LOG_DIR: str = os.environ.get("TAP_M3_LOG_DIR", "logs/slurm")
-    TAP_MAX_CONCURRENT_JOBS: int = int(os.environ.get("TAP_MAX_CONCURRENT_JOBS", "10"))
+    TAP_MAX_CONCURRENT_JOBS: int = int(os.environ.get("TAP_MAX_CONCURRENT_JOBS", "3"))
 
     WANDB_ENTITY: str = os.environ.get("WANDB_ENTITY", "")
     WANDB_PROJECT: str = os.environ.get("WANDB_PROJECT", "")
     WANDB_API_KEY: str = os.environ.get("WANDB_API_KEY", "")
-    DISCORD_WEBHOOK_URL: str = os.environ.get("DISCORD_WEBHOOK_URL", "")
     WANDB_HEALTHCHECK_RUN_ID: str = os.environ.get("WANDB_HEALTHCHECK_RUN_ID", "")
-    TAP_MAX_CONCURRENT_JOBS: int = int(os.environ.get("TAP_MAX_CONCURRENT_JOBS", "3"))
-    
+
+    DISCORD_WEBHOOK_URL: str = os.environ.get("DISCORD_WEBHOOK_URL", "")
+
+    VAPID_PRIVATE_KEY: str = os.environ.get("VAPID_PRIVATE_KEY", "")
+    VAPID_PUBLIC_KEY: str = os.environ.get("VAPID_PUBLIC_KEY", "")
+    VAPID_CLAIMS_EMAIL: str = os.environ.get("VAPID_CLAIMS_EMAIL", "tap@localhost")
+
 
 settings = Settings()

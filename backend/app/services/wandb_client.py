@@ -33,6 +33,27 @@ def pick_metric(summary: Dict[str, Any], candidates: list) -> Any:
     return None
 
 
+def get_run_history_since(wandb_run_id: str, min_step: int = 0) -> list[Dict[str, Any]]:
+    """Return all history rows with step >= min_step as {step, metrics} dicts."""
+    api = wandb.Api()
+    run = api.run(get_wandb_run_path(wandb_run_id))
+    rows: list[Dict[str, Any]] = []
+    for row in run.scan_history(min_step=min_step):
+        step = row.get("_step")
+        if step is None:
+            continue
+        metrics = {
+            k: float(v)
+            for k, v in row.items()
+            if not k.startswith("_")
+            and isinstance(v, (int, float))
+            and v == v  # exclude NaN
+        }
+        if metrics:
+            rows.append({"step": int(step), "metrics": metrics})
+    return rows
+
+
 def get_run_snapshot(wandb_run_id: str) -> Dict[str, Any]:
     api = wandb.Api()
     run = api.run(get_wandb_run_path(wandb_run_id))

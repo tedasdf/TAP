@@ -158,28 +158,38 @@ class MetricSnapshotResponse(BaseModel):
         )
 
 
+class MetricPointCreate(BaseModel):
+    step: int
+    epoch: int | None = None
+    source: str = "manual"
+    metrics: dict[str, float] = {}
+
+
 class MetricPointResponse(BaseModel):
+    point_id: str
+    run_id: str
     step: int
     epoch: int | None
-    training_loss: float | None
-    validation_loss: float | None
-    runtime: float | None
-    learning_rate: float | None
     source: str
+    metrics: dict[str, float]
     created_at: str | None
 
     @classmethod
-    def from_domain(cls, point: Any) -> MetricPointResponse:
+    def from_domain(cls, point: Any) -> "MetricPointResponse":
         return cls(
+            point_id=point.point_id,
+            run_id=point.run_id,
             step=point.step,
             epoch=point.epoch,
-            training_loss=point.training_loss,
-            validation_loss=point.validation_loss,
-            runtime=point.runtime,
-            learning_rate=point.learning_rate,
             source=point.source,
+            metrics=point.metrics,
             created_at=point.created_at,
         )
+
+
+class CheckpointPost(BaseModel):
+    checkpoint_path: str
+    is_best: bool = False
 
 
 class MetricSyncStatusResponse(BaseModel):

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 from app.models.metric import MetricPoint, MetricSnapshot, MetricSyncStatus
 from app.repositories.base import BaseRepository
 
@@ -22,12 +24,12 @@ class MetricRepository(BaseRepository):
             )
             VALUES (?, ?, ?, ?, ?, ?, ?, COALESCE(?, CURRENT_TIMESTAMP))
             ON CONFLICT(run_id) DO UPDATE SET
-                current_step = excluded.current_step,
-                current_epoch = excluded.current_epoch,
-                training_loss = excluded.training_loss,
-                validation_loss = excluded.validation_loss,
-                runtime = excluded.runtime,
-                learning_rate = excluded.learning_rate,
+                current_step           = excluded.current_step,
+                current_epoch          = excluded.current_epoch,
+                training_loss          = excluded.training_loss,
+                validation_loss        = excluded.validation_loss,
+                runtime                = excluded.runtime,
+                learning_rate          = excluded.learning_rate,
                 latest_metric_timestamp = excluded.latest_metric_timestamp
             """,
             (
@@ -48,33 +50,24 @@ class MetricRepository(BaseRepository):
         return MetricSnapshot.from_row(row)
 
     def add_point(self, point: MetricPoint) -> None:
-        point_id = point.point_id or self._new_id()
+        point_id   = point.point_id or self._new_id()
         created_at = point.created_at or self._utc_now()
         self._conn.execute(
             """
-            INSERT INTO metric_points (
-                point_id, run_id, step, epoch, training_loss,
-                validation_loss, runtime, learning_rate, source, created_at
-            )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO metric_points (point_id, run_id, step, epoch, source, metrics_json, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(run_id, step, source) DO UPDATE SET
-                epoch = excluded.epoch,
-                training_loss = excluded.training_loss,
-                validation_loss = excluded.validation_loss,
-                runtime = excluded.runtime,
-                learning_rate = excluded.learning_rate,
-                created_at = excluded.created_at
+                epoch        = excluded.epoch,
+                metrics_json = excluded.metrics_json,
+                created_at   = excluded.created_at
             """,
             (
                 point_id,
                 point.run_id,
                 point.step,
                 point.epoch,
-                point.training_loss,
-                point.validation_loss,
-                point.runtime,
-                point.learning_rate,
                 point.source,
+                json.dumps(point.metrics, ensure_ascii=False),
                 created_at,
             ),
         )
@@ -94,9 +87,10 @@ class MetricRepository(BaseRepository):
     def get_best_validation_loss(self, run_id: str) -> float | None:
         row = self._conn.execute(
             """
-            SELECT MIN(validation_loss) AS best
+            SELECT MIN(CAST(json_extract(metrics_json, '$.validation_loss') AS REAL)) AS best
             FROM metric_points
-            WHERE run_id = ? AND validation_loss IS NOT NULL
+            WHERE run_id = ?
+              AND json_extract(metrics_json, '$.validation_loss') IS NOT NULL
             """,
             (run_id,),
         ).fetchone()
@@ -106,6 +100,15 @@ class MetricRepository(BaseRepository):
             return float(row["best"])
         except (TypeError, ValueError):
             return None
+
+    def get_last_step(self, run_id: str, source: str) -> int | None:
+        row = self._conn.execute(
+            "SELECT MAX(step) AS s FROM metric_points WHERE run_id = ? AND source = ?",
+            (run_id, source),
+        ).fetchone()
+        if row and row["s"] is not None:
+            return int(row["s"])
+        return None
 
     def count_points(self, run_id: str, source: str) -> int:
         row = self._conn.execute(
@@ -132,9 +135,9 @@ class MetricRepository(BaseRepository):
             )
             VALUES (?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(run_id) DO UPDATE SET
-                source = excluded.source,
-                status = excluded.status,
-                last_started_at = CASE
+                source           = excluded.source,
+                status           = excluded.status,
+                last_started_at  = CASE
                     WHEN excluded.last_started_at IS NOT NULL
                     THEN excluded.last_started_at
                     ELSE metric_sync_status.last_started_at
@@ -144,8 +147,8 @@ class MetricRepository(BaseRepository):
                     THEN excluded.last_finished_at
                     ELSE metric_sync_status.last_finished_at
                 END,
-                error_message = excluded.error_message,
-                points_synced = excluded.points_synced
+                error_message    = excluded.error_message,
+                points_synced    = excluded.points_synced
             """,
             (
                 status.run_id,

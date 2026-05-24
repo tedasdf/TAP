@@ -174,6 +174,36 @@ class RunRefresher:
         with get_db() as conn:
             return [r.run_id for r in RunRepository(conn).list_active()]
 
+    def _check_stuck_runs(self) -> None:
+        from app.repositories.push_repo import PushRepository
+        from app.services.push_service import broadcast_push
+
+        with get_db() as conn:
+            runs = RunRepository(conn)
+            rows = conn.execute(
+                """
+                SELECT run_id FROM runs
+                WHERE status = 'queued'
+                  AND created_at < datetime('now', '-5 hours')
+                """
+            ).fetchall()
+            for row in rows:
+                run_id = row["run_id"]
+                event_type = "run_stuck_queued"
+                if runs.notifications.exists(run_id, event_type):
+                    continue
+                msg = f"Run {run_id} has been queued for over 5 hours."
+                runs.notifications.create(Notification(
+                    notification_id=runs.notifications._new_id(),
+                    event_type=event_type,
+                    severity="warning",
+                    title="Run stuck in queue",
+                    message=msg,
+                    timestamp=runs.notifications._utc_now(),
+                    run_id=run_id,
+                ))
+                broadcast_push(PushRepository(conn).get_all(), title="Run stuck in queue", body=msg)
+
     async def run(self) -> tuple[int, int]:
         run_ids: list[str] = await asyncio.to_thread(self._list_active_run_ids)
         errors = 0
@@ -186,6 +216,10 @@ class RunRefresher:
                     await asyncio.to_thread(self._record_failure, run_id, exc)
                 except Exception:
                     log.exception("RunRefresher: failed to record failure for %s", run_id)
+        try:
+            await asyncio.to_thread(self._check_stuck_runs)
+        except Exception:
+            log.exception("RunRefresher: stuck-run check failed")
         return len(run_ids), errors
 
 

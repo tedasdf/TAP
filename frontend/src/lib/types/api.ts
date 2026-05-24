@@ -63,6 +63,16 @@ export type ApiRunMetrics = {
   latest_metric_timestamp?: string | null;
 };
 
+export type ApiMetricPoint = {
+  point_id: string;
+  run_id: string;
+  step: number;
+  epoch?: number | null;
+  source: string;
+  metrics: Record<string, number>;
+  created_at?: string | null;
+};
+
 export type CreateRunPayload = {
   name: string;
   config_path: string;

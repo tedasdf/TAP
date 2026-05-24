@@ -3,6 +3,7 @@ import "./globals.css";
 import { QueryProvider } from "@/providers/query-provider";
 import { ServiceWorkerRegistration } from "@/components/ServiceWorkerRegistration";
 import { InstallPrompt } from "@/components/InstallPrompt";
+import { PushNotificationSetup } from "@/components/PushNotificationSetup";
 
 export const metadata: Metadata = {
   title: "TAP",
@@ -45,12 +46,6 @@ export const viewport: Viewport = {
   ],
 };
 
-export const viewport: Viewport = {
-  themeColor: "#0a0a0a",
-  width: "device-width",
-  initialScale: 1,
-};
-
 export default function RootLayout({
   children,
 }: Readonly<{
@@ -64,6 +59,7 @@ export default function RootLayout({
           <InstallPrompt />
         </QueryProvider>
         <ServiceWorkerRegistration />
+        <PushNotificationSetup />
       </body>
     </html>
   );
