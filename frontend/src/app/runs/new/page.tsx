@@ -14,6 +14,7 @@ function CreateRunForm() {
   const [configPath, setConfigPath] = useState(searchParams.get("configPath") ?? "");
   const [configOverrides, setConfigOverrides] = useState("");
   const [wandbConfigRef, setWandbConfigRef] = useState("");
+  const [launchMode, setLaunchMode] = useState<"direct" | "sbatch">("sbatch");
   const [formError, setFormError] = useState<string | null>(null);
 
   const isSubmitting = createRunMutation.isPending;
@@ -38,6 +39,8 @@ function CreateRunForm() {
         config_path: configPath.trim(),
         config_overrides: configOverrides.trim() || undefined,
         wandb_config_ref: wandbConfigRef.trim() || undefined,
+        launch_mode: launchMode,
+        launch_now: true,
       });
 
       router.push(`/runs/${createdRun.run_id}`);
@@ -117,6 +120,38 @@ function CreateRunForm() {
               placeholder="optional"
               disabled={isSubmitting}
             />
+          </div>
+
+          <div className="space-y-2">
+            <label className="text-sm text-zinc-300">Launch mode</label>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => setLaunchMode("direct")}
+                disabled={isSubmitting}
+                className={`rounded-xl border px-3 py-2.5 text-left text-sm transition-colors ${
+                  launchMode === "direct"
+                    ? "border-emerald-500 bg-emerald-500/10 text-emerald-300"
+                    : "border-zinc-700 bg-black text-zinc-400"
+                }`}
+              >
+                <div className="font-medium">Smoke test</div>
+                <div className="mt-0.5 text-xs opacity-70">Direct · fast · ~50 steps</div>
+              </button>
+              <button
+                type="button"
+                onClick={() => setLaunchMode("sbatch")}
+                disabled={isSubmitting}
+                className={`rounded-xl border px-3 py-2.5 text-left text-sm transition-colors ${
+                  launchMode === "sbatch"
+                    ? "border-emerald-500 bg-emerald-500/10 text-emerald-300"
+                    : "border-zinc-700 bg-black text-zinc-400"
+                }`}
+              >
+                <div className="font-medium">Full run</div>
+                <div className="mt-0.5 text-xs opacity-70">SLURM · queued · full training</div>
+              </button>
+            </div>
           </div>
 
           {formError ? (

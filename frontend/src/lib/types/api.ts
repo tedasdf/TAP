@@ -78,6 +78,8 @@ export type CreateRunPayload = {
   config_path: string;
   config_overrides?: string;
   wandb_config_ref?: string;
+  launch_mode?: "direct" | "sbatch";
+  launch_now?: boolean;
 };
 
 
