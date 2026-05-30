@@ -8,6 +8,7 @@ dependencies = [
     "fastapi>=0.136.0",
     "pydantic>=2.13.2",
     "python-dotenv>=1.2.2",
+    "pywebpush>=2.3.0",
     "uvicorn[standard]>=0.44.0",
     "wandb>=0.26.0",
 ]
