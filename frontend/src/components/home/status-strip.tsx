@@ -8,8 +8,8 @@ type StatusStripProps = {
 export function StatusStrip({ status }: StatusStripProps) {
   const items = [
     { label: "Backend", value: status.backend },
-    { label: "M3", value: status.m3 },
     { label: "Slurm", value: status.slurm },
+    { label: "Database", value: status.database },
     { label: "W&B", value: status.wandb },
   ];
 

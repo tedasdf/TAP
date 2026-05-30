@@ -35,8 +35,8 @@ export type AlertView = {
 
 export type StatusStripView = {
   backend: HealthState;
-  m3: HealthState;
   slurm: HealthState;
+  database: HealthState;
   wandb: HealthState;
 };
 

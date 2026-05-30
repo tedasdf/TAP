@@ -38,14 +38,9 @@ function mapSystemStatusToItems(status?: ApiSystemStatus): SystemItem[] {
       note: "API health and responsiveness",
     },
     {
-      label: "M3",
-      status: normalizeStatus(status?.checks?.ssh ?? status?.m3),
-      note: "Remote execution machine connectivity",
-    },
-    {
       label: "Slurm",
-      status: normalizeStatus(status?.checks?.ssh ?? status?.slurm),
-      note: "Scheduler availability and queue access",
+      status: normalizeStatus(status?.checks?.ssh ?? status?.slurm ?? status?.m3),
+      note: "Scheduler and remote machine connectivity",
     },
     {
       label: "Database",
@@ -100,87 +95,65 @@ export default function SystemPage() {
               ))}
             </div>
 
-            <>
-              <div className="space-y-3">
-                {items.map((item) => (
-                  <div
-                    key={item.label}
-                    className="flex items-start justify-between gap-4 rounded-2xl border border-zinc-800 bg-zinc-900/70 p-4"
-                  >
-                    <div>
-                      <h2 className="text-sm font-semibold text-white">{item.label}</h2>
-                      <p className="mt-1 text-sm text-zinc-400">{item.note}</p>
-                    </div>
-                    <StatusBadge status={item.status} />
-                  </div>
-                ))}
-              </div>
+            {data?.background_worker && (
+              <div className="rounded-2xl border border-zinc-800 bg-zinc-900/70 p-4">
+                <h2 className="text-sm font-semibold text-white">Background worker</h2>
 
-              {data?.background_worker && (
-                <div className="rounded-2xl border border-zinc-800 bg-zinc-900/70 p-4">
-                  <h2 className="text-sm font-semibold text-white">Background worker</h2>
-
-                  <div className="mt-4 space-y-3 text-sm">
-                    <div className="flex justify-between gap-4">
-                      <span className="text-zinc-500">Enabled</span>
-                      <span className="text-right text-zinc-200">
-                        {data.background_worker.enabled ? "Yes" : "No"}
-                      </span>
-                    </div>
-
-                    <div className="flex justify-between gap-4">
-                      <span className="text-zinc-500">Running</span>
-                      <span className="text-right text-zinc-200">
-                        {data.background_worker.running ? "Yes" : "No"}
-                      </span>
-                    </div>
-
-                    <div className="flex justify-between gap-4">
-                      <span className="text-zinc-500">Refresh interval</span>
-                      <span className="text-right text-zinc-200">
-                        {data.background_worker.interval_seconds}s
-                      </span>
-                    </div>
-
-                    <div className="flex justify-between gap-4">
-                      <span className="text-zinc-500">Last cycle runs</span>
-                      <span className="text-right text-zinc-200">
-                        {data.background_worker.last_cycle_run_count}
-                      </span>
-                    </div>
-
-                    <div className="flex justify-between gap-4">
-                      <span className="text-zinc-500">Last cycle errors</span>
-                      <span className="text-right text-zinc-200">
-                        {data.background_worker.last_cycle_error_count}
-                      </span>
-                    </div>
-
-                    {data.background_worker.last_cycle_finished_at && (
-                      <div className="flex justify-between gap-4">
-                        <span className="text-zinc-500">Last finished</span>
-                        <span className="text-right text-zinc-200">
-                          {new Date(
-                            data.background_worker.last_cycle_finished_at,
-                          ).toLocaleString()}
-                        </span>
-                      </div>
-                    )}
+                <div className="mt-4 space-y-3 text-sm">
+                  <div className="flex justify-between gap-4">
+                    <span className="text-zinc-500">Enabled</span>
+                    <span className="text-right text-zinc-200">
+                      {data.background_worker.enabled ? "Yes" : "No"}
+                    </span>
                   </div>
 
-                  {data.background_worker.last_error && (
-                    <pre className="mt-4 whitespace-pre-wrap break-words rounded-lg border border-red-900 bg-red-950 p-3 text-xs text-red-300">
-                      {data.background_worker.last_error}
-                    </pre>
+                  <div className="flex justify-between gap-4">
+                    <span className="text-zinc-500">Running</span>
+                    <span className="text-right text-zinc-200">
+                      {data.background_worker.running ? "Yes" : "No"}
+                    </span>
+                  </div>
+
+                  <div className="flex justify-between gap-4">
+                    <span className="text-zinc-500">Refresh interval</span>
+                    <span className="text-right text-zinc-200">
+                      {data.background_worker.interval_seconds}s
+                    </span>
+                  </div>
+
+                  <div className="flex justify-between gap-4">
+                    <span className="text-zinc-500">Last cycle runs</span>
+                    <span className="text-right text-zinc-200">
+                      {data.background_worker.last_cycle_run_count}
+                    </span>
+                  </div>
+
+                  <div className="flex justify-between gap-4">
+                    <span className="text-zinc-500">Last cycle errors</span>
+                    <span className="text-right text-zinc-200">
+                      {data.background_worker.last_cycle_error_count}
+                    </span>
+                  </div>
+
+                  {data.background_worker.last_cycle_finished_at && (
+                    <div className="flex justify-between gap-4">
+                      <span className="text-zinc-500">Last finished</span>
+                      <span className="text-right text-zinc-200">
+                        {new Date(
+                          data.background_worker.last_cycle_finished_at,
+                        ).toLocaleString()}
+                      </span>
+                    </div>
                   )}
                 </div>
-              )}
 
-              <div className="rounded-2xl border border-zinc-800 bg-zinc-900/70 p-4">
-                <h2 className="text-sm font-semibold text-white">Recent activity</h2>
-                ...
+                {data.background_worker.last_error && (
+                  <pre className="mt-4 whitespace-pre-wrap break-words rounded-lg border border-red-900 bg-red-950 p-3 text-xs text-red-300">
+                    {data.background_worker.last_error}
+                  </pre>
+                )}
               </div>
-            </>
+            )}
 
             <div className="rounded-2xl border border-zinc-800 bg-zinc-900/70 p-4">
               <h2 className="text-sm font-semibold text-white">Recent activity</h2>
@@ -188,16 +161,12 @@ export default function SystemPage() {
               <div className="mt-4 space-y-3 text-sm">
                 <div className="flex justify-between gap-4">
                   <span className="text-zinc-500">Runs tracked</span>
-                  <span className="text-right text-zinc-200">
-                    {data?.run_count ?? "—"}
-                  </span>
+                  <span className="text-right text-zinc-200">{data?.run_count ?? "—"}</span>
                 </div>
 
                 <div className="flex justify-between gap-4">
                   <span className="text-zinc-500">Active runs</span>
-                  <span className="text-right text-zinc-200">
-                    {data?.active_run_count ?? "—"}
-                  </span>
+                  <span className="text-right text-zinc-200">{data?.active_run_count ?? "—"}</span>
                 </div>
 
                 {data?.timestamp && (

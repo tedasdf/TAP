@@ -41,8 +41,8 @@ function mapSystemStatusToView(status?: ApiSystemStatus): StatusStripView {
 
   return {
     backend: normalize(status?.backend),
-    m3: normalize(status?.m3),
-    slurm: normalize(status?.slurm),
+    slurm: normalize(status?.slurm ?? status?.m3),
+    database: normalize(status?.database),
     wandb: normalize(status?.wandb),
   };
 }
