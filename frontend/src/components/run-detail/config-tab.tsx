@@ -1,3 +1,8 @@
+"use client";
+
+import { useRouter } from "next/navigation";
+import { LayoutTemplate } from "lucide-react";
+
 type ConfigTabProps = {
   configPath: string;
   configOverrides?: Record<string, unknown> | null;
@@ -6,6 +11,19 @@ type ConfigTabProps = {
   configSnapshot?: Record<string, unknown> | null;
 };
 
+function flattenObject(obj: Record<string, unknown>, prefix = ""): Record<string, unknown> {
+  const result: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(obj)) {
+    const key = prefix ? `${prefix}.${k}` : k;
+    if (v !== null && typeof v === "object" && !Array.isArray(v)) {
+      Object.assign(result, flattenObject(v as Record<string, unknown>, key));
+    } else {
+      result[key] = v;
+    }
+  }
+  return result;
+}
+
 export function ConfigTab({
   configPath,
   configOverrides,
@@ -13,6 +31,17 @@ export function ConfigTab({
   wandbRunId,
   configSnapshot,
 }: ConfigTabProps) {
+  const router = useRouter();
+
+  function handleUseAsTemplate() {
+    const source = configSnapshot ?? configOverrides;
+    if (source) {
+      const flat = flattenObject(source);
+      sessionStorage.setItem("tap_template_seed", JSON.stringify(flat));
+    }
+    router.push("/templates/new");
+  }
+
   return (
     <div className="space-y-4">
       <div className="rounded-2xl border border-zinc-800 bg-zinc-900/70 p-4">
@@ -53,6 +82,15 @@ export function ConfigTab({
           </div>
         </div>
       </div>
+
+      <button
+        type="button"
+        onClick={handleUseAsTemplate}
+        className="inline-flex w-full items-center justify-center gap-2 rounded-2xl border border-zinc-700 bg-zinc-900/70 px-4 py-3 text-sm font-medium text-zinc-200 transition hover:bg-zinc-800 hover:text-white"
+      >
+        <LayoutTemplate className="h-4 w-4" />
+        Use as Template
+      </button>
     </div>
   );
 }

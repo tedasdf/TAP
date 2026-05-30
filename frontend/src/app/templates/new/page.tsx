@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft, Check, ChevronDown, ChevronUp, GitBranch, Rocket } from "lucide-react";
@@ -421,6 +421,29 @@ export default function NewTemplatePage() {
   const [paramState, setParamState] = useState<Record<string, ParamState>>(initState);
   const [formError, setFormError] = useState<string | null>(null);
   const [touched, setTouched] = useState(false);
+
+  useEffect(() => {
+    const raw = sessionStorage.getItem("tap_template_seed");
+    if (!raw) return;
+    sessionStorage.removeItem("tap_template_seed");
+    try {
+      const seed = JSON.parse(raw) as Record<string, unknown>;
+      setParamState((prev) => {
+        const next = { ...prev };
+        for (const p of PARAMS) {
+          const v = seed[p.key];
+          if (v === undefined || v === null) continue;
+          const coerced = typeof v === "string" || typeof v === "number" ? v : String(v);
+          if (p.options.map(String).includes(String(coerced))) {
+            next[p.key] = { ...next[p.key], role: "fixed", fixedValue: coerced };
+          }
+        }
+        return next;
+      });
+    } catch {
+      // ignore malformed seed
+    }
+  }, []);
 
   function updateParam(key: string, patch: Partial<ParamState>) {
     setParamState((prev) => ({ ...prev, [key]: { ...prev[key], ...patch } }));
