@@ -23,7 +23,8 @@ class RunCreate(BaseModel):
     wandb_config_ref: str | None = None
     wandb_run_id: str | None = None
     launch_now: bool = True
-    launch_mode: str = "slurm"  # NEW — "slurm" | "direct"
+    launch_mode: str = "slurm"  # "slurm" | "direct"
+    template_id: str | None = None
 
 class JobUpdate(BaseModel):
     queue_state: str | None = None
@@ -82,9 +83,16 @@ class RunResponse(BaseModel):
     created_at: str
     error_message: str | None
     config_snapshot: dict[str, Any] | None = None
-    launch_mode: str = "slurm"          # NEW
-    direct_pid: int | None = None       # NEW
-    direct_log_path: str | None = None  # NEW
+    launch_mode: str = "slurm"
+    direct_pid: int | None = None
+    direct_log_path: str | None = None
+    current_step: int | None = None
+    current_epoch: int | None = None
+    training_loss: float | None = None
+    validation_loss: float | None = None
+    runtime: float | None = None
+    learning_rate: float | None = None
+    latest_metric_timestamp: str | None = None
 
     @classmethod
     def from_domain(cls, run: Any) -> RunResponse:
@@ -101,9 +109,16 @@ class RunResponse(BaseModel):
             created_at=run.created_at,
             error_message=run.error_message,
             config_snapshot=run.config_snapshot or None,
-            launch_mode=run.launch_mode,          # NEW
-            direct_pid=run.direct_pid,            # NEW
-            direct_log_path=run.direct_log_path,  # NEW
+            launch_mode=run.launch_mode,
+            direct_pid=run.direct_pid,
+            direct_log_path=run.direct_log_path,
+            current_step=run.current_step,
+            current_epoch=run.current_epoch,
+            training_loss=run.training_loss,
+            validation_loss=run.validation_loss,
+            runtime=run.runtime,
+            learning_rate=run.learning_rate,
+            latest_metric_timestamp=run.latest_metric_timestamp,
         )
 
 class JobResponse(BaseModel):

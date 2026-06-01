@@ -77,8 +77,9 @@ class TemplatePromoter:
         new_status = "failed"
 
         try:
-            code, stdout, stderr, slurm_job_id = launch_training_run(
+            code, stdout, stderr, slurm_job_id, _ = launch_training_run(
                 run_name=run_name,
+                run_id=run_id,
                 git_commit=run["git_commit"],
                 config_path=run["config_path"],
             )

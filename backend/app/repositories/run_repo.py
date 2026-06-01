@@ -33,24 +33,34 @@ class RunRepository(BaseRepository):
 
     # ── Queries ───────────────────────────────────────────────────────────────
 
+    _METRICS_JOIN = """
+        LEFT JOIN metrics m ON m.run_id = runs.run_id
+    """
+    _METRICS_COLS = """
+        runs.*,
+        m.current_step, m.current_epoch, m.training_loss,
+        m.validation_loss, m.runtime, m.learning_rate, m.latest_metric_timestamp
+    """
+
     def find(self, run_id: str) -> Run | None:
         row = self._conn.execute(
-            "SELECT * FROM runs WHERE run_id = ?", (run_id,)
+            f"SELECT {self._METRICS_COLS} FROM runs {self._METRICS_JOIN} WHERE runs.run_id = ?",
+            (run_id,),
         ).fetchone()
         return Run.from_row(row) if row else None
 
     def list_all(self) -> list[Run]:
         rows = self._conn.execute(
-            "SELECT * FROM runs ORDER BY datetime(created_at) DESC"
+            f"SELECT {self._METRICS_COLS} FROM runs {self._METRICS_JOIN} ORDER BY datetime(runs.created_at) DESC"
         ).fetchall()
         return [Run.from_row(r) for r in rows]
 
     def list_active(self) -> list[Run]:
         rows = self._conn.execute(
-            """
-            SELECT * FROM runs
-            WHERE status IN ('created', 'queued', 'running', 'unknown')
-            ORDER BY datetime(created_at) ASC
+            f"""
+            SELECT {self._METRICS_COLS} FROM runs {self._METRICS_JOIN}
+            WHERE runs.status IN ('created', 'queued', 'running', 'unknown')
+            ORDER BY datetime(runs.created_at) ASC
             """
         ).fetchall()
         return [Run.from_row(r) for r in rows]

@@ -24,9 +24,17 @@ class Run:
     template_id: str | None = None
     last_checked_at: str | None = None
     error_message: str | None = None
-    launch_mode: str = "slurm"          # NEW
-    direct_pid: int | None = None       # NEW
-    direct_log_path: str | None = None  # NEW
+    launch_mode: str = "slurm"
+    direct_pid: int | None = None
+    direct_log_path: str | None = None
+    # summary metrics — populated when fetched with a metrics JOIN
+    current_step: int | None = None
+    current_epoch: int | None = None
+    training_loss: float | None = None
+    validation_loss: float | None = None
+    runtime: float | None = None
+    learning_rate: float | None = None
+    latest_metric_timestamp: str | None = None
 
     @classmethod
     def from_row(cls, row: Any) -> Run:
@@ -48,9 +56,16 @@ class Run:
             template_id=d.get("template_id"),
             last_checked_at=d.get("last_checked_at"),
             error_message=d.get("error_message"),
-            launch_mode=d.get("launch_mode") or "slurm",   # NEW
-            direct_pid=d.get("direct_pid"),                 # NEW
-            direct_log_path=d.get("direct_log_path"),       # NEW
+            launch_mode=d.get("launch_mode") or "slurm",
+            direct_pid=d.get("direct_pid"),
+            direct_log_path=d.get("direct_log_path"),
+            current_step=d.get("current_step"),
+            current_epoch=d.get("current_epoch"),
+            training_loss=d.get("training_loss"),
+            validation_loss=d.get("validation_loss"),
+            runtime=d.get("runtime"),
+            learning_rate=d.get("learning_rate"),
+            latest_metric_timestamp=d.get("latest_metric_timestamp"),
         )
 
     @property

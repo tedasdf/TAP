@@ -4,12 +4,18 @@ import {
   markAllNotificationsRead,
   markNotificationRead,
 } from "@/lib/api/notifications";
+import { requestPushPermission } from "@/components/PushNotificationSetup";
 import type { ApiNotification } from "@/lib/types/api";
 
 export function NotificationBell() {
   const [notifications, setNotifications] = useState<ApiNotification[]>([]);
   const [open, setOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [pushPermission, setPushPermission] = useState<NotificationPermission | null>(null);
+
+  useEffect(() => {
+    if ("Notification" in window) setPushPermission(Notification.permission);
+  }, []);
 
   const unreadCount = useMemo(
     () => notifications.filter((item) => item.read_state === 0).length,
@@ -30,6 +36,11 @@ export function NotificationBell() {
     if (notification.run_id) {
         window.location.assign(`/runs/${notification.run_id}`);    
     }
+  }
+
+  async function handleEnablePush() {
+    const granted = await requestPushPermission();
+    setPushPermission(granted ? "granted" : "denied");
   }
 
   async function handleMarkAllRead() {
@@ -93,6 +104,16 @@ export function NotificationBell() {
             </button>
           </div>
 
+          {pushPermission !== "granted" && "Notification" in window && (
+            <button
+              type="button"
+              onClick={handleEnablePush}
+              className="mb-3 w-full rounded-lg border border-zinc-600 py-2 text-xs text-zinc-300 hover:bg-zinc-800"
+            >
+              Enable push notifications
+            </button>
+          )}
+
           {error && <p className="text-sm text-red-400">{error}</p>}
 
           {!error && notifications.length === 0 && (
@@ -114,7 +135,7 @@ export function NotificationBell() {
                 <div className="flex items-center justify-between gap-3">
                   <span className="font-medium">{notification.title}</span>
                   <span className="text-xs text-zinc-500">
-                    {notification.severity}
+                    {notification.event_type}
                   </span>
                 </div>
 

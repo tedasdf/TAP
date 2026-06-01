@@ -93,6 +93,28 @@ def cancel_run(run_id: str) -> dict[str, str]:
     return {"run_id": run.run_id, "status": run.status}
 
 
+@router.patch("/runs/{run_id}/wandb-run-id", status_code=200)
+def set_wandb_run_id(run_id: str, payload: dict) -> dict[str, str]:
+    wandb_run_id = (payload.get("wandb_run_id") or "").strip()
+    if not wandb_run_id:
+        raise HTTPException(status_code=400, detail="wandb_run_id is required")
+    with get_db() as conn:
+        repo = RunRepository(conn)
+        if repo.find(run_id) is None:
+            raise HTTPException(status_code=404, detail=f"Run '{run_id}' not found")
+        repo.update(run_id, wandb_run_id=wandb_run_id)
+    return {"run_id": run_id, "wandb_run_id": wandb_run_id}
+
+
+@router.delete("/runs/{run_id}", status_code=204)
+def delete_run(run_id: str) -> None:
+    with get_db() as conn:
+        repo = RunRepository(conn)
+        if repo.find(run_id) is None:
+            raise HTTPException(status_code=404, detail=f"Run '{run_id}' not found")
+        repo.delete(run_id)
+
+
 @router.get("/runs/{run_id}/events")
 def list_run_events(run_id: str) -> list[RunEventResponse]:
     with get_db() as conn:

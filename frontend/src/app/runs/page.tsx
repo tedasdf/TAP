@@ -55,7 +55,8 @@ export default function RunsPage() {
             ? true
             : run.name.toLowerCase().includes(q) ||
               run.config_path.toLowerCase().includes(q) ||
-              (run.slurm_job_id ?? "").toLowerCase().includes(q);
+              (run.slurm_job_id ?? "").toLowerCase().includes(q) ||
+              run.run_id.toLowerCase().includes(q);
 
         const matchesFilter =
           selectedFilter === "all" ? true : run.status === selectedFilter;

@@ -12,3 +12,16 @@ services:
       - ./data:/app/data
       - ~/.ssh:/root/.ssh:ro
     restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        - NEXT_PUBLIC_API_BASE_URL=${NEXT_PUBLIC_API_BASE_URL:-http://100.65.199.35:8000}
+    container_name: tap-frontend
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+    restart: unless-stopped

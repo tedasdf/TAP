@@ -46,7 +46,10 @@ def init_db() -> None:
                 last_checked_at TEXT,
                 error_message TEXT,
                 config_snapshot_json TEXT,
-                template_id TEXT
+                template_id TEXT,
+                launch_mode TEXT,
+                direct_pid INTEGER,
+                direct_log_path TEXT
             )
             """
         )
@@ -113,6 +116,7 @@ def init_db() -> None:
                 runtime REAL,
                 learning_rate REAL,
                 source TEXT NOT NULL DEFAULT 'manual',
+                metrics_json TEXT,
                 created_at TEXT NOT NULL,
                 UNIQUE(run_id, step, source),
                 FOREIGN KEY (run_id) REFERENCES runs(run_id) ON DELETE CASCADE
@@ -185,6 +189,18 @@ def init_db() -> None:
             """
         )
 
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS push_subscriptions (
+                subscription_id TEXT PRIMARY KEY,
+                endpoint TEXT NOT NULL UNIQUE,
+                p256dh TEXT NOT NULL,
+                auth TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            )
+            """
+        )
+
         _run_migrations(conn)
 
 
@@ -197,6 +213,22 @@ def _run_migrations(conn: sqlite3.Connection) -> None:
     if "title" not in existing_notif_cols:
         conn.execute("ALTER TABLE notifications ADD COLUMN title TEXT NOT NULL DEFAULT 'Notification'")
 
+    existing_tables = {
+        row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
+    }
+    if "push_subscriptions" not in existing_tables:
+        conn.execute(
+            """
+            CREATE TABLE push_subscriptions (
+                subscription_id TEXT PRIMARY KEY,
+                endpoint TEXT NOT NULL UNIQUE,
+                p256dh TEXT NOT NULL,
+                auth TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            )
+            """
+        )
+
     existing_run_cols = {
         row["name"] for row in conn.execute("PRAGMA table_info(runs)").fetchall()
     }
@@ -204,3 +236,9 @@ def _run_migrations(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE runs ADD COLUMN config_snapshot_json TEXT")
     if "template_id" not in existing_run_cols:
         conn.execute("ALTER TABLE runs ADD COLUMN template_id TEXT")
+    if "launch_mode" not in existing_run_cols:
+        conn.execute("ALTER TABLE runs ADD COLUMN launch_mode TEXT")
+    if "direct_pid" not in existing_run_cols:
+        conn.execute("ALTER TABLE runs ADD COLUMN direct_pid INTEGER")
+    if "direct_log_path" not in existing_run_cols:
+        conn.execute("ALTER TABLE runs ADD COLUMN direct_log_path TEXT")
