@@ -14,7 +14,7 @@ import { cn } from "@/lib/utils";
 type ParamDef = {
   key: string;
   label: string;
-  section: "model" | "training" | "data";
+  section: "model" | "training";
   options: (string | number)[];
   canDerive: boolean;
   deriveExpr?: string; // uses full dotted key as variable name
@@ -24,15 +24,15 @@ type ParamDef = {
 const PARAMS: ParamDef[] = [
   {
     key: "model.attention_type", label: "attention_type", section: "model",
-    options: ["baseline", "gqa", "mha"], canDerive: false,
+    options: ["baseline", "gqa"], canDerive: false,
   },
   {
     key: "model.normalization", label: "normalization", section: "model",
-    options: ["rmsnorm", "layernorm", "none"], canDerive: false,
+    options: ["rmsnorm", "layernorm"], canDerive: false,
   },
   {
     key: "model.mlp_type", label: "mlp_type", section: "model",
-    options: ["gelu", "silu", "relu"], canDerive: false,
+    options: ["gelu", "relu2", "swiglu"], canDerive: false,
   },
   {
     key: "model.d_model", label: "d_model", section: "model",
@@ -64,20 +64,11 @@ const PARAMS: ParamDef[] = [
     key: "training.scheduler", label: "scheduler", section: "training",
     options: ["cosine", "linear", "constant"], canDerive: false,
   },
-  {
-    key: "data.source_type", label: "source_type", section: "data",
-    options: ["huggingface", "local"], canDerive: false,
-  },
-  {
-    key: "data.dataset_name", label: "dataset_name", section: "data",
-    options: ["HuggingFaceFW/fineweb-edu", "openwebtext", "wikitext-103"], canDerive: false,
-  },
 ];
 
-const SECTIONS: { id: "model" | "training" | "data"; label: string }[] = [
+const SECTIONS: { id: "model" | "training"; label: string }[] = [
   { id: "model", label: "Model Architecture" },
   { id: "training", label: "Training" },
-  { id: "data", label: "Data" },
 ];
 
 // ─── State ───────────────────────────────────────────────────────────────────
