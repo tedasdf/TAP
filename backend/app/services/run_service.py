@@ -246,7 +246,8 @@ class RunService:
         if not log_path:
             return
         try:
-            code, stdout, _ = run_ssh_command(f"grep -m1 'TAP_WANDB_RUN_ID=' {log_path} 2>/dev/null || true")
+            import shlex
+            code, stdout, _ = run_ssh_command(f"grep -m1 'TAP_WANDB_RUN_ID=' {shlex.quote(log_path)} 2>/dev/null || true")
             if code == 0 and "TAP_WANDB_RUN_ID=" in stdout:
                 wandb_run_id = stdout.strip().split("TAP_WANDB_RUN_ID=", 1)[1].strip()
                 if wandb_run_id:
