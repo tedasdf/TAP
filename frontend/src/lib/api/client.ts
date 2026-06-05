@@ -33,7 +33,15 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
     let message = `Request failed: ${response.status}`;
     try {
       const errorData = await response.json();
-      message = errorData.detail || errorData.message || message;
+      const detail = errorData.detail;
+      if (typeof detail === "string") {
+        message = detail;
+      } else if (Array.isArray(detail)) {
+        // Pydantic v2 validation errors: [{loc, msg, type}, ...]
+        message = detail.map((e: { msg?: string }) => e.msg ?? JSON.stringify(e)).join("; ");
+      } else if (typeof errorData.message === "string") {
+        message = errorData.message;
+      }
     } catch {
       // ignore json parse failure
     }

@@ -456,7 +456,7 @@ export default function NewTemplatePage() {
   async function doCreate() {
     return createMutation.mutateAsync({
       name: name.trim(),
-      description: description.trim() || null,
+      description: description.trim(),
       params: compiled,
     });
   }
