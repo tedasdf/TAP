@@ -78,9 +78,10 @@ class RunRepository(BaseRepository):
                 config_overrides, wandb_config_ref, slurm_job_id,
                 wandb_run_id, created_at, last_checked_at, error_message,
                 config_snapshot_json, template_id,
-                launch_mode, direct_pid, direct_log_path
+                launch_mode, direct_pid, direct_log_path,
+                seed, data_ref
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 run.run_id, run.name, run.status, run.git_commit,
@@ -90,7 +91,8 @@ class RunRepository(BaseRepository):
                 run.created_at, run.last_checked_at, run.error_message,
                 json.dumps(run.config_snapshot, ensure_ascii=False),
                 run.template_id,
-                run.launch_mode, run.direct_pid, run.direct_log_path,  # NEW
+                run.launch_mode, run.direct_pid, run.direct_log_path,
+                run.seed, run.data_ref,
             ),
         )
         return self.find(run.run_id)  # type: ignore[return-value]

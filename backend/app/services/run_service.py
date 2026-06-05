@@ -185,7 +185,9 @@ class RunService:
             error_message=error_message,
             launch_mode=payload.launch_mode,
             direct_pid=pid if payload.launch_mode == "direct" else None,
-            direct_log_path=direct_log_path if payload.launch_mode == "direct" else None,        
+            direct_log_path=direct_log_path if payload.launch_mode == "direct" else None,
+            seed=payload.seed,
+            data_ref=payload.data_ref,
         )
 
         created_run = self._runs.create(run)
@@ -494,6 +496,7 @@ def _build_config_snapshot(
         },
         "data_references": {
             "dataset": config_overrides.get("data.dataset_name"),
+            "data_ref": payload.data_ref,
             "tokenizer": config_overrides.get("tokenizer.path"),
             "raw_config_path": payload.config_path,
         },

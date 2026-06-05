@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 def utc_now_iso() -> str:
@@ -23,7 +23,19 @@ class RunCreate(BaseModel):
     wandb_config_ref: str | None = None
     wandb_run_id: str | None = None
     launch_now: bool = True
-    launch_mode: str = "slurm"  # NEW — "slurm" | "direct"
+    launch_mode: str = "slurm"  # "slurm" | "direct"
+    seed: int | None = None
+    data_ref: str | None = None  # format: <hf_dataset_id>@<revision>
+
+    @field_validator("data_ref")
+    @classmethod
+    def data_ref_must_pin_revision(cls, v: str | None) -> str | None:
+        if v is not None and "@" not in v:
+            raise ValueError(
+                "data_ref must include a pinned revision: '<dataset>@<commit>' "
+                f"(got '{v}')"
+            )
+        return v
 
 class JobUpdate(BaseModel):
     queue_state: str | None = None
@@ -82,9 +94,11 @@ class RunResponse(BaseModel):
     created_at: str
     error_message: str | None
     config_snapshot: dict[str, Any] | None = None
-    launch_mode: str = "slurm"          # NEW
-    direct_pid: int | None = None       # NEW
-    direct_log_path: str | None = None  # NEW
+    launch_mode: str = "slurm"
+    direct_pid: int | None = None
+    direct_log_path: str | None = None
+    seed: int | None = None
+    data_ref: str | None = None
 
     @classmethod
     def from_domain(cls, run: Any) -> RunResponse:
@@ -101,9 +115,11 @@ class RunResponse(BaseModel):
             created_at=run.created_at,
             error_message=run.error_message,
             config_snapshot=run.config_snapshot or None,
-            launch_mode=run.launch_mode,          # NEW
-            direct_pid=run.direct_pid,            # NEW
-            direct_log_path=run.direct_log_path,  # NEW
+            launch_mode=run.launch_mode,
+            direct_pid=run.direct_pid,
+            direct_log_path=run.direct_log_path,
+            seed=run.seed,
+            data_ref=run.data_ref,
         )
 
 class JobResponse(BaseModel):

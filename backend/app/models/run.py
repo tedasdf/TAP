@@ -24,9 +24,11 @@ class Run:
     template_id: str | None = None
     last_checked_at: str | None = None
     error_message: str | None = None
-    launch_mode: str = "slurm"          # NEW
-    direct_pid: int | None = None       # NEW
-    direct_log_path: str | None = None  # NEW
+    launch_mode: str = "slurm"
+    direct_pid: int | None = None
+    direct_log_path: str | None = None
+    seed: int | None = None
+    data_ref: str | None = None
 
     @classmethod
     def from_row(cls, row: Any) -> Run:
@@ -48,9 +50,11 @@ class Run:
             template_id=d.get("template_id"),
             last_checked_at=d.get("last_checked_at"),
             error_message=d.get("error_message"),
-            launch_mode=d.get("launch_mode") or "slurm",   # NEW
-            direct_pid=d.get("direct_pid"),                 # NEW
-            direct_log_path=d.get("direct_log_path"),       # NEW
+            launch_mode=d.get("launch_mode") or "slurm",
+            direct_pid=d.get("direct_pid"),
+            direct_log_path=d.get("direct_log_path"),
+            seed=d.get("seed"),
+            data_ref=d.get("data_ref"),
         )
 
     @property
