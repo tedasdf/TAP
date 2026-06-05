@@ -6,6 +6,9 @@ from app.config import settings
 
 
 def get_wandb_run_path(wandb_run_id: str) -> str:
+    # New runs store entity/project/id; old runs store just the id
+    if wandb_run_id.count("/") >= 2:
+        return wandb_run_id
     if not settings.WANDB_ENTITY or not settings.WANDB_PROJECT:
         raise ValueError("WANDB_ENTITY and WANDB_PROJECT must be set")
     return f"{settings.WANDB_ENTITY}/{settings.WANDB_PROJECT}/{wandb_run_id}"
