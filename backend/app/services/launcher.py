@@ -140,6 +140,7 @@ def build_remote_launch_command(
 
     script = f"""
         set -e
+        [ -f ~/.bash_profile ] && . ~/.bash_profile || true
         cd {shlex.quote(M3_REPO_PATH)}
         export TAP_GIT_COMMIT={shlex.quote(git_commit)}
         export CONFIG_PATH={shlex.quote(config_path)}
