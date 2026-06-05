@@ -14,61 +14,118 @@ import { cn } from "@/lib/utils";
 type ParamDef = {
   key: string;
   label: string;
-  section: "model" | "training";
+  section: "data" | "tokenizer" | "model" | "training";
   options: (string | number)[];
   canDerive: boolean;
-  deriveExpr?: string; // uses full dotted key as variable name
-  deriveFrom?: string; // full dotted key of parent param
+  deriveExpr?: string;
+  deriveFrom?: string;
 };
 
 const PARAMS: ParamDef[] = [
+  // ── Data ────────────────────────────────────────────────────────────────
+  {
+    key: "data.dataset_name", label: "dataset_name", section: "data",
+    options: ["HuggingFaceFW/fineweb-edu", "openwebtext"], canDerive: false,
+  },
+  {
+    key: "data.seq_len", label: "seq_len", section: "data",
+    options: [128, 256, 512, 1024], canDerive: false,
+  },
+
+  // ── Tokenizer ────────────────────────────────────────────────────────────
+  {
+    key: "tokenizer.vocab_size", label: "vocab_size", section: "tokenizer",
+    options: [8000, 16000, 32000], canDerive: false,
+  },
+
+  // ── Model Architecture ───────────────────────────────────────────────────
+  {
+    key: "model.d_model", label: "model_dim", section: "model",
+    options: [128, 256, 512, 1024], canDerive: false,
+  },
+  {
+    key: "model.n_layers", label: "num_layers", section: "model",
+    options: [4, 6, 8, 12], canDerive: false,
+  },
+  {
+    key: "model.n_heads", label: "num_heads", section: "model",
+    options: [2, 4, 8, 16], canDerive: true,
+    deriveExpr: "model.d_model / 64", deriveFrom: "model.d_model",
+  },
+  {
+    key: "model.n_kv_heads", label: "num_kv_heads", section: "model",
+    options: [1, 2, 4, 8], canDerive: true,
+    deriveExpr: "model.n_heads / 2", deriveFrom: "model.n_heads",
+  },
   {
     key: "model.attention_type", label: "attention_type", section: "model",
     options: ["baseline", "gqa"], canDerive: false,
-  },
-  {
-    key: "model.normalization", label: "normalization", section: "model",
-    options: ["rmsnorm", "layernorm"], canDerive: false,
   },
   {
     key: "model.mlp_type", label: "mlp_type", section: "model",
     options: ["gelu", "relu2", "swiglu"], canDerive: false,
   },
   {
-    key: "model.d_model", label: "d_model", section: "model",
-    options: [128, 256, 512, 1024], canDerive: false,
+    key: "model.mlp_mult", label: "mlp_mult", section: "model",
+    options: [2.0, 4.0, 8.0], canDerive: false,
   },
   {
-    key: "model.n_heads", label: "n_heads", section: "model",
-    options: [2, 4, 8, 16], canDerive: true,
-    deriveExpr: "model.d_model / 64", deriveFrom: "model.d_model",
+    key: "model.normalization", label: "norm_type", section: "model",
+    options: ["rmsnorm", "layernorm"], canDerive: false,
   },
   {
-    key: "model.n_layers", label: "n_layers", section: "model",
-    options: [2, 4, 6, 8, 12], canDerive: false,
+    key: "model.rope_base", label: "rope_base", section: "model",
+    options: [1000, 10000, 100000], canDerive: false,
+  },
+
+  // ── Trainer · Optimizer · Scheduler ─────────────────────────────────────
+  {
+    key: "trainer.max_steps", label: "max_steps", section: "training",
+    options: [500, 1000, 5000, 10000], canDerive: false,
   },
   {
-    key: "training.learning_rate", label: "learning_rate", section: "training",
+    key: "trainer.batch_size", label: "batch_size", section: "training",
+    options: [4, 8, 16, 32], canDerive: false,
+  },
+  {
+    key: "trainer.grad_accum", label: "grad_accum_steps", section: "training",
+    options: [1, 4, 8, 16], canDerive: false,
+  },
+  {
+    key: "trainer.precision", label: "precision", section: "training",
+    options: ["bf16", "fp32"], canDerive: false,
+  },
+  {
+    key: "trainer.seed", label: "seed", section: "training",
+    options: [42, 123, 456], canDerive: false,
+  },
+  {
+    key: "optimizer.type", label: "optimizer", section: "training",
+    options: ["adamw", "sgd"], canDerive: false,
+  },
+  {
+    key: "optimizer.lr", label: "learning_rate", section: "training",
     options: [3e-4, 1e-4, 3e-5, 1e-5], canDerive: false,
   },
   {
-    key: "training.batch_size", label: "batch_size", section: "training",
-    options: [4, 8, 16, 32], canDerive: true,
-    deriveExpr: "model.d_model / 64", deriveFrom: "model.d_model",
+    key: "optimizer.weight_decay", label: "weight_decay", section: "training",
+    options: [0.0, 1e-4, 1e-2, 0.1], canDerive: false,
   },
   {
-    key: "training.max_steps", label: "max_steps", section: "training",
-    options: [100, 500, 1000, 5000, 10000], canDerive: false,
+    key: "scheduler.type", label: "scheduler", section: "training",
+    options: ["cosine_with_warmup", "constant"], canDerive: false,
   },
   {
-    key: "training.scheduler", label: "scheduler", section: "training",
-    options: ["cosine", "linear", "constant"], canDerive: false,
+    key: "scheduler.warmup_steps", label: "warmup_steps", section: "training",
+    options: [100, 500, 1000, 5000], canDerive: false,
   },
 ];
 
-const SECTIONS: { id: "model" | "training"; label: string }[] = [
-  { id: "model", label: "Model Architecture" },
-  { id: "training", label: "Training" },
+const SECTIONS: { id: "data" | "tokenizer" | "model" | "training"; label: string }[] = [
+  { id: "data",      label: "Data" },
+  { id: "tokenizer", label: "Tokenizer" },
+  { id: "model",     label: "Model Architecture" },
+  { id: "training",  label: "Trainer · Optimizer · Scheduler" },
 ];
 
 // ─── State ───────────────────────────────────────────────────────────────────
