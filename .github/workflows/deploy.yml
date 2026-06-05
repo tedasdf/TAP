@@ -7,13 +7,24 @@ on:
 jobs:
   deploy:
     runs-on: self-hosted
+
     steps:
-      - name: Pull latest code
+      - name: Clone or pull latest code
+        run: |
+          if [ -d "$GITHUB_WORKSPACE/.git" ]; then
+            cd $GITHUB_WORKSPACE
+            git pull origin main
+          else
+            git clone https://github.com/tedasdf/TAP.git $GITHUB_WORKSPACE
+            cd $GITHUB_WORKSPACE
+          fi
+
+      - name: Stop existing containers
         run: |
           cd $GITHUB_WORKSPACE
-          git pull origin main
+          docker compose down
 
-      - name: Rebuild and restart containers
+      - name: Build and start containers
         run: |
           cd $GITHUB_WORKSPACE
           docker compose build --pull
