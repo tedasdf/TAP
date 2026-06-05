@@ -37,3 +37,27 @@ def unsubscribe(payload: PushUnsubscribePayload) -> dict:
     with get_db() as conn:
         PushRepository(conn).delete(payload.endpoint)
     return {"ok": True}
+
+
+@router.post("/push/test")
+def test_push() -> dict:
+    from app.services.push_service import send_push
+    with get_db() as conn:
+        subs = PushRepository(conn).get_all()
+    if not subs:
+        return {"subscriptions": 0, "sent": 0, "error": "no subscriptions"}
+    errors = []
+    sent = 0
+    for sub in subs:
+        try:
+            from pywebpush import webpush
+            webpush(
+                subscription_info=sub,
+                data='{"title":"TAP Test","body":"Push working!"}',
+                vapid_private_key=settings.VAPID_PRIVATE_KEY,
+                vapid_claims={"sub": f"mailto:{settings.VAPID_CLAIMS_EMAIL}"},
+            )
+            sent += 1
+        except Exception as exc:
+            errors.append(str(exc))
+    return {"subscriptions": len(subs), "sent": sent, "errors": errors}

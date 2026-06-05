@@ -162,15 +162,17 @@ export default function RunDetailPage() {
             {refreshRunMutation.isPending ? "Refreshing..." : "Refresh"}
           </button>
 
-          <button
-            type="button"
-            onClick={handleSync}
-            disabled={syncWandbMutation.isPending}
-            className="inline-flex items-center justify-center gap-2 rounded-2xl border border-zinc-800 bg-zinc-900/70 px-4 py-3 text-sm text-zinc-200 disabled:opacity-60"
-          >
-            <RefreshCw className="h-4 w-4" />
-            Sync
-          </button>
+          {runQuery.data?.wandb_run_id && (
+            <button
+              type="button"
+              onClick={handleSync}
+              disabled={syncWandbMutation.isPending}
+              className="inline-flex items-center justify-center gap-2 rounded-2xl border border-zinc-800 bg-zinc-900/70 px-4 py-3 text-sm text-zinc-200 disabled:opacity-60"
+            >
+              <RefreshCw className="h-4 w-4" />
+              Sync
+            </button>
+          )}
 
           <button
             type="button"

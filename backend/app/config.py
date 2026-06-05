@@ -15,8 +15,11 @@ class Settings:
     TAP_GIT_REMOTE: str = os.environ.get("TAP_GIT_REMOTE", "origin")
     TAP_M3_SUBMIT_SCRIPT: str = os.environ.get("TAP_M3_SUBMIT_SCRIPT", "scripts/slurm/test.slurm")
     TAP_M3_LOG_DIR: str = os.environ.get("TAP_M3_LOG_DIR", "logs/slurm")
-    TAP_MAX_CONCURRENT_JOBS: int = int(os.environ.get("TAP_MAX_CONCURRENT_JOBS", "3"))
-
+    TAP_MAX_CONCURRENT_JOBS: int = int(os.environ.get("TAP_MAX_CONCURRENT_JOBS", "10"))
+    TAP_M3_CONDA_ENV: str = os.environ.get("TAP_M3_CONDA_ENV", "slm_ven")
+    TAP_API_URL: str = os.getenv("TAP_API_URL", "http://localhost:8000")
+    TAP_M3_CONFIG_DIR: str = os.environ.get("TAP_M3_CONFIG_DIR", "configs/generated")
+    TAP_LOCAL_CONFIG_DIR: str = os.environ.get("TAP_LOCAL_CONFIG_DIR", "data/configs/generated")
     WANDB_ENTITY: str = os.environ.get("WANDB_ENTITY", "")
     WANDB_PROJECT: str = os.environ.get("WANDB_PROJECT", "")
     WANDB_API_KEY: str = os.environ.get("WANDB_API_KEY", "")

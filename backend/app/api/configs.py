@@ -18,7 +18,7 @@ router = APIRouter()
 class SLMConfigSaveResponse(BaseModel):
     config: dict
     yaml: str
-    saved_path: str
+    local_path: str
     config_path: str
 
 
@@ -31,10 +31,10 @@ def generate_slm_config_route(payload: SLMConfigGenerateRequest) -> dict:
 @router.post("/configs/save/slm", response_model=SLMConfigSaveResponse)
 def save_slm_config_route(payload: SLMConfigSaveRequest) -> SLMConfigSaveResponse:
     config = generate_slm_config(payload)
-    saved_path, yaml_text = save_slm_config(config, payload.filename)
+    local_path, relative_path, yaml_text = save_slm_config(config, payload.filename)
     return SLMConfigSaveResponse(
         config=config,
         yaml=yaml_text,
-        saved_path=saved_path,
-        config_path=saved_path,
+        local_path=local_path,
+        config_path=relative_path,
     )

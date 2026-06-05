@@ -1,29 +1,187 @@
 from __future__ import annotations
 
-import json
+import ast
+import operator
+from itertools import product as iterproduct
+from typing import Any
 
 from fastapi import APIRouter, HTTPException
+from pydantic import BaseModel
 
 from app.db import get_db
-from app.models.event import RunEvent
-from app.models.run import Run
 from app.models.template import Template, TemplateRun
 from app.repositories.base import BaseRepository
 from app.repositories.run_repo import RunRepository
 from app.repositories.template_repo import TemplateRepository
-from app.schemas import CreateTemplateRequest, LaunchTemplateRequest, TemplateResponse
-from app.services.launcher import get_remote_git_state, read_remote_config_file
-from app.services.template_engine import expand_template, validate_template_params
+from app.schemas import CreateTemplateRequest, RunCreate, TemplateResponse
+from app.services.config_gen import (
+    SLMConfigGenerateRequest,
+    copy_config_to_cluster,
+    generate_slm_config,
+    save_slm_config,
+)
+from app.services.run_service import RunService
 
 
 router = APIRouter(tags=["templates"])
 
+# Maps template dotted-key params → SLMConfigGenerateRequest field names
+_PARAM_KEY_MAP: dict[str, str] = {
+    "model.attention_type": "attention_type",
+    "model.normalization": "normalization",
+    "model.mlp_type": "mlp_type",
+    "model.d_model": "d_model",
+    "model.n_heads": "n_heads",
+    "model.n_layers": "n_layers",
+    "training.learning_rate": "learning_rate",
+    "training.batch_size": "batch_size",
+    "training.max_steps": "max_steps",
+    "training.scheduler": "scheduler",
+}
+
+_SAFE_OPS = {
+    ast.Add: operator.add,
+    ast.Sub: operator.sub,
+    ast.Mult: operator.mul,
+    ast.Div: operator.truediv,
+    ast.FloorDiv: operator.floordiv,
+}
+
+
+def _eval_expr(node: ast.expr) -> float:
+    if isinstance(node, ast.Constant):
+        return float(node.value)
+    if isinstance(node, ast.BinOp) and type(node.op) in _SAFE_OPS:
+        return _SAFE_OPS[type(node.op)](_eval_expr(node.left), _eval_expr(node.right))
+    raise ValueError(f"Unsupported expression: {ast.dump(node)}")
+
+
+def _resolve_derive(expr: str, from_key: str, from_val: float) -> int | float:
+    substituted = expr.replace(from_key, str(from_val))
+    try:
+        tree = ast.parse(substituted, mode="eval")
+        result = _eval_expr(tree.body)
+        return int(result) if result == int(result) else result
+    except Exception:
+        return float("nan")
+
+
+def _expand_combos(params: dict[str, Any]) -> list[dict[str, Any]]:
+    vary_keys = [k for k, v in params.items() if isinstance(v, dict) and v.get("role") == "vary"]
+
+    if vary_keys:
+        vary_values = [params[k]["values"] for k in vary_keys]
+        combos: list[dict[str, Any]] = [
+            {vary_keys[i]: v for i, v in enumerate(row)}
+            for row in iterproduct(*vary_values)
+        ]
+    else:
+        combos = [{}]
+
+    for key, spec in params.items():
+        if isinstance(spec, dict) and spec.get("role") == "fixed":
+            for c in combos:
+                c[key] = spec["value"]
+
+    for key, spec in params.items():
+        if isinstance(spec, dict) and spec.get("role") == "derive":
+            from_key = spec.get("from", "")
+            expr = spec.get("expr", "")
+            for c in combos:
+                from_val = c.get(from_key)
+                if isinstance(from_val, (int, float)):
+                    c[key] = _resolve_derive(expr, from_key, float(from_val))
+
+    return combos
+
+
+def _combo_to_config_request(combo: dict[str, Any], experiment_name: str) -> SLMConfigGenerateRequest:
+    kwargs: dict[str, Any] = {"experiment_name": experiment_name}
+    for dotted_key, field_name in _PARAM_KEY_MAP.items():
+        if dotted_key in combo:
+            kwargs[field_name] = combo[dotted_key]
+    return SLMConfigGenerateRequest(**kwargs)
+
+
+# ─── Request / Response models ────────────────────────────────────────────────
+
+class TemplateLaunchPayload(BaseModel):
+    dry_run: bool = False
+    git_commit: str | None = None
+    launch_mode: str = "slurm"
+
+
+class TemplateLaunchResponse(BaseModel):
+    template_id: str
+    total: int
+    launched: int
+    failed: int
+    errors: list[str] = []
+
+
+# ─── Endpoints ───────────────────────────────────────────────────────────────
 
 @router.get("/templates")
 def list_templates() -> list[TemplateResponse]:
     with get_db() as conn:
         templates = TemplateRepository(conn).list_all()
     return [TemplateResponse.from_domain(t) for t in templates]
+
+
+@router.get("/templates/{template_id}/preview")
+def preview_template(template_id: str) -> dict:
+    with get_db() as conn:
+        template = TemplateRepository(conn).find(template_id)
+    if template is None:
+        raise HTTPException(status_code=404, detail=f"Template '{template_id}' not found")
+
+    combos = _expand_combos(template.params)
+    return {
+        "template_id": template_id,
+        "total_runs": len(combos),
+        "combos": [
+            {"combo_index": i, "params": combo, "derive_trace": {}}
+            for i, combo in enumerate(combos)
+        ],
+    }
+
+
+@router.get("/templates/{template_id}/runs")
+def get_template_runs(template_id: str) -> dict:
+    with get_db() as conn:
+        repo = TemplateRepository(conn)
+        template = repo.find(template_id)
+        if template is None:
+            raise HTTPException(status_code=404, detail=f"Template '{template_id}' not found")
+
+        template_runs = repo.list_runs(template_id)
+        run_repo = RunRepository(conn)
+        runs_data = []
+        for tr in template_runs:
+            run = run_repo.find(tr.run_id)
+            if run:
+                runs_data.append({
+                    "run_id": run.run_id,
+                    "name": run.name,
+                    "status": run.status,
+                    "combo_index": tr.combo_index,
+                    "slurm_job_id": run.slurm_job_id,
+                    "created_at": run.created_at,
+                    "params": {},
+                    "metrics": {
+                        "training_loss": run.training_loss,
+                        "validation_loss": run.validation_loss,
+                        "learning_rate": run.learning_rate,
+                        "current_step": run.current_step,
+                        "latest_metric_timestamp": run.latest_metric_timestamp,
+                    },
+                })
+
+    return {
+        "template_id": template_id,
+        "template_name": template.name,
+        "runs": runs_data,
+    }
 
 
 @router.get("/templates/{template_id}")
@@ -50,93 +208,70 @@ def create_template(payload: CreateTemplateRequest) -> TemplateResponse:
     return TemplateResponse.from_domain(saved)
 
 
-@router.post("/templates/{template_id}/launch")
-def launch_template(template_id: str, payload: LaunchTemplateRequest) -> dict:
-    """Expand a template into deferred runs (status=created).
+@router.post("/templates/{template_id}/launch", response_model=TemplateLaunchResponse)
+def launch_template(template_id: str, payload: TemplateLaunchPayload) -> TemplateLaunchResponse:
+    from app.config import settings
 
-    The orchestrator's TemplatePromoter picks them up and submits to SLURM
-    as concurrency slots open.
-    """
+
     with get_db() as conn:
         template = TemplateRepository(conn).find(template_id)
     if template is None:
         raise HTTPException(status_code=404, detail=f"Template '{template_id}' not found")
 
-    errors = validate_template_params(template.params)
-    if errors:
-        raise HTTPException(status_code=422, detail={"errors": errors})
+    combos = _expand_combos(template.params)
 
-    combos = expand_template(template.params)
+    if payload.dry_run:
+        return TemplateLaunchResponse(
+            template_id=template_id,
+            total=len(combos),
+            launched=0,
+            failed=0,
+        )
 
-    # Resolve git state and config file once — not once per combo.
-    git_state = get_remote_git_state()
-    git_commit = payload.git_commit or git_state["commit"]
-    config_file_snapshot = read_remote_config_file(payload.config_path)
+    launched = 0
+    errors: list[str] = []
 
-    run_ids: list[str] = []
+    for i, combo in enumerate(combos):
+        exp_name = f"{template.name}-{i}"
+        try:
+            config_req = _combo_to_config_request(combo, exp_name)
+            config = generate_slm_config(config_req)
+            local_path, relative_path, _ = save_slm_config(config, None)
 
-    with get_db() as conn:
-        runs = RunRepository(conn)
-        templates = TemplateRepository(conn)
-
-        for combo in combos:
-            run_id = BaseRepository._new_id()
-            created_at = BaseRepository._utc_now()
-            run_name = f"{template.name}-{combo['combo_index']}"
-            overrides: dict = combo["params"]
-
-            config_snapshot = {
-                "run_id": run_id,
-                "name": run_name,
-                "git_commit": git_commit,
-                "config_path": payload.config_path,
-                "config_overrides": overrides,
-                "config_file": config_file_snapshot,
-                "template_id": template_id,
-                "combo_index": combo["combo_index"],
-                "derive_trace": combo.get("derive_trace", {}),
-                "created_at": created_at,
-            }
-
-            run = Run(
-                run_id=run_id,
-                name=run_name,
-                status="created",
-                git_commit=git_commit,
-                config_path=payload.config_path,
-                created_at=created_at,
-                config_overrides=overrides,
-                config_snapshot=config_snapshot,
-                template_id=template_id,
-                launch_mode="slurm",
+            copy_config_to_cluster(
+                local_path,
+                cluster_host=settings.TAP_M3_HOST,
+                remote_repo_path=settings.TAP_M3_REPO_PATH,
+                relative_config_path=relative_path,
             )
-            runs.create(run)
 
-            runs.events.create(RunEvent(
-                event_id=BaseRepository._new_id(),
-                run_id=run_id,
-                event_type="RUN_CREATED",
-                message=f"Deferred run created from template (combo {combo['combo_index']})",
-                new_status="created",
-                created_at=BaseRepository._utc_now(),
-                payload={
-                    "template_id": template_id,
-                    "combo_index": combo["combo_index"],
-                    "params": overrides,
-                },
-            ))
-
-            templates.add_run(TemplateRun(
-                id=BaseRepository._new_id(),
+            run_payload = RunCreate(
+                name=exp_name,
+                git_commit=payload.git_commit,
+                config_path=relative_path,
+                config_overrides={},
+                launch_now=False,
+                launch_mode=payload.launch_mode,
                 template_id=template_id,
-                run_id=run_id,
-                combo_index=combo["combo_index"],
-            ))
+            )
 
-            run_ids.append(run_id)
+            with get_db() as conn:
+                run = RunService(conn).create(run_payload)
+                TemplateRepository(conn).add_run(TemplateRun(
+                    id=BaseRepository._new_id(),
+                    template_id=template_id,
+                    run_id=run.run_id,
+                    combo_index=i,
+                ))
 
-    return {
-        "template_id": template_id,
-        "runs_created": len(run_ids),
-        "run_ids": run_ids,
-    }
+            launched += 1
+        except Exception as exc:
+            errors.append(f"Combo {i} ({exp_name}): {exc}")
+
+    return TemplateLaunchResponse(
+        template_id=template_id,
+        total=len(combos),
+        launched=launched,
+        failed=len(combos) - launched,
+        errors=errors,
+    )

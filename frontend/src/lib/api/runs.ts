@@ -1,5 +1,5 @@
 import { apiRequest } from "@/lib/api/client";
-import type { ApiMetricSyncStatus, ApiRunLogs, RefreshActiveRunsResponse, RunEvent } from "@/lib/types/api";
+import type { ApiCompareResponse, ApiMetricSyncStatus, ApiRunLogs, RefreshActiveRunsResponse, RunEvent } from "@/lib/types/api";
 import { ApiMetricPoint, ApiRun, ApiRunMetrics, CreateRunPayload } from "@/lib/types/api";
 
 
@@ -67,4 +67,8 @@ export function refreshActiveRuns() {
 
 export function deleteRun(runId: string) {
   return apiRequest<void>(`/runs/${runId}`, { method: "DELETE" });
+}
+
+export function compareRuns(runIds: string[]) {
+  return apiRequest<ApiCompareResponse>(`/runs/compare?run_ids=${runIds.join(",")}`);
 }

@@ -1,7 +1,7 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { cancelRun, createRun, deleteRun, getRun, getRunMetrics, getRuns, refreshRun, syncWandb } from "@/lib/api/runs";
+import { cancelRun, createRun, deleteRun, getRun, getRunEvents, getRunMetricHistory, getRunMetricSyncStatus, getRunMetrics, getRuns, refreshRun, syncWandb } from "@/lib/api/runs";
 import { CreateRunPayload } from "@/lib/types/api";
 
 
@@ -26,6 +26,33 @@ export function useRunMetrics(runId: string) {
   return useQuery({
     queryKey: ["runs", runId, "metrics"],
     queryFn: () => getRunMetrics(runId),
+    enabled: !!runId,
+    refetchInterval: 15000,
+  });
+}
+
+export function useRunMetricHistory(runId: string) {
+  return useQuery({
+    queryKey: ["runs", runId, "metrics", "history"],
+    queryFn: () => getRunMetricHistory(runId),
+    enabled: !!runId,
+    refetchInterval: 15000,
+  });
+}
+
+export function useRunEvents(runId: string) {
+  return useQuery({
+    queryKey: ["runs", runId, "events"],
+    queryFn: () => getRunEvents(runId),
+    enabled: !!runId,
+    refetchInterval: 15000,
+  });
+}
+
+export function useRunMetricSyncStatus(runId: string) {
+  return useQuery({
+    queryKey: ["runs", runId, "metrics", "sync-status"],
+    queryFn: () => getRunMetricSyncStatus(runId),
     enabled: !!runId,
     refetchInterval: 15000,
   });

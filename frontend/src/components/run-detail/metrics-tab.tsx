@@ -17,7 +17,10 @@ const LINE_COLORS = [
   "#e879f9", "#fb7185", "#facc15", "#a78bfa",
 ];
 
-const DEFAULT_KEYS = ["training_loss", "validation_loss"];
+const DEFAULT_KEYS = [
+  "train/loss", "training_loss",
+  "eval/val_loss", "validation_loss",
+];
 
 type MetricsTabProps = {
   data: ApiMetricPoint[];

@@ -26,6 +26,7 @@ class RunCreate(BaseModel):
     launch_mode: str = "slurm"  # "slurm" | "direct"
     seed: int | None = None
     data_ref: str | None = None  # format: <hf_dataset_id>@<revision>
+    template_id: str | None = None
 
     @field_validator("data_ref")
     @classmethod
@@ -99,6 +100,13 @@ class RunResponse(BaseModel):
     direct_log_path: str | None = None
     seed: int | None = None
     data_ref: str | None = None
+    current_step: int | None = None
+    current_epoch: int | None = None
+    training_loss: float | None = None
+    validation_loss: float | None = None
+    runtime: float | None = None
+    learning_rate: float | None = None
+    latest_metric_timestamp: str | None = None
 
     @classmethod
     def from_domain(cls, run: Any) -> RunResponse:
@@ -120,6 +128,13 @@ class RunResponse(BaseModel):
             direct_log_path=run.direct_log_path,
             seed=run.seed,
             data_ref=run.data_ref,
+            current_step=run.current_step,
+            current_epoch=run.current_epoch,
+            training_loss=run.training_loss,
+            validation_loss=run.validation_loss,
+            runtime=run.runtime,
+            learning_rate=run.learning_rate,
+            latest_metric_timestamp=run.latest_metric_timestamp,
         )
 
 class JobResponse(BaseModel):

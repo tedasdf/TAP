@@ -2,7 +2,7 @@
 
 import { useEffect } from "react";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
 
 async function getVapidKey(): Promise<string | null> {
   try {
@@ -31,7 +31,7 @@ async function subscribe(registration: ServiceWorkerRegistration): Promise<void>
     existing ??
     (await registration.pushManager.subscribe({
       userVisibleOnly: true,
-      applicationServerKey: urlBase64ToUint8Array(vapidKey),
+      applicationServerKey: urlBase64ToUint8Array(vapidKey).buffer as ArrayBuffer,
     }));
 
   const json = sub.toJSON();
@@ -49,9 +49,15 @@ async function subscribe(registration: ServiceWorkerRegistration): Promise<void>
   });
 }
 
+function isIOS() {
+  return /iPhone|iPad|iPod/.test(navigator.userAgent);
+}
+
 export function PushNotificationSetup() {
   useEffect(() => {
     if (!("serviceWorker" in navigator) || !("PushManager" in window)) return;
+    // iOS requires a user gesture — the NotificationBell handles it there
+    if (isIOS()) return;
 
     Notification.requestPermission().then((permission) => {
       if (permission !== "granted") return;
@@ -60,4 +66,13 @@ export function PushNotificationSetup() {
   }, []);
 
   return null;
+}
+
+export async function requestPushPermission(): Promise<boolean> {
+  if (!("serviceWorker" in navigator) || !("PushManager" in window)) return false;
+  const permission = await Notification.requestPermission();
+  if (permission !== "granted") return false;
+  const reg = await navigator.serviceWorker.ready;
+  await subscribe(reg);
+  return true;
 }

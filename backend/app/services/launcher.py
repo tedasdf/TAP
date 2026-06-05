@@ -3,6 +3,7 @@ import posixpath
 import re
 import shlex
 import subprocess
+from pathlib import Path
 from typing import Any
 
 from app.config import settings
@@ -102,9 +103,32 @@ def run_ssh_command(remote_command: str) -> tuple[int, str, str]:
     )
     return completed.returncode, completed.stdout.strip(), completed.stderr.strip()
 
+def ensure_config_on_cluster(config_path: str) -> None:
+    """If config_path matches a locally saved generated config, SCP it to the cluster.
+
+    config_path is relative to the repo root (e.g. configs/generated/foo.yaml).
+    Only acts when a matching local file exists — pre-existing cluster configs are left alone.
+    """
+    from app.services.config_gen import copy_config_to_cluster
+
+    local_dir = Path(settings.TAP_LOCAL_CONFIG_DIR).resolve()
+    local_file = local_dir / Path(config_path).name
+
+    if not local_file.exists():
+        return
+
+    copy_config_to_cluster(
+        str(local_file),
+        cluster_host=settings.TAP_M3_HOST,
+        remote_repo_path=M3_REPO_PATH,
+        relative_config_path=config_path,
+    )
+
+
 def build_remote_launch_command(
     *,
     run_name: str,
+    run_id: str,
     git_commit: str,
     config_path: str,
     config_overrides: dict[str, Any] | None = None,
@@ -112,6 +136,7 @@ def build_remote_launch_command(
 ) -> str:
     submit_script = submit_script or settings.TAP_M3_SUBMIT_SCRIPT
     overrides_json = json.dumps(config_overrides or {}, ensure_ascii=False)
+    tap_api_url = settings.TAP_API_URL
 
     script = f"""
         set -e
@@ -120,7 +145,9 @@ def build_remote_launch_command(
         export CONFIG_PATH={shlex.quote(config_path)}
         export CONFIG_OVERRIDES_JSON={shlex.quote(overrides_json)}
         export TAP_RUN_NAME={shlex.quote(run_name)}
-        sbatch --job-name={shlex.quote(run_name)} {shlex.quote(submit_script)}
+        export TAP_RUN_ID={shlex.quote(run_id)}
+        export TAP_API_URL={shlex.quote(tap_api_url)}
+        sbatch --job-name={shlex.quote(run_name)} --export=ALL {shlex.quote(submit_script)}
     """.strip()
 
     return f"bash -lc {shlex.quote(script)}"
@@ -157,13 +184,16 @@ def build_remote_error_log_path(run_name: str, slurm_job_id: str) -> str:
 def launch_training_run(
     *,
     run_name: str,
+    run_id: str,
     git_commit: str,
     config_path: str,
     config_overrides: dict[str, Any] | None = None,
     submit_script: str | None = None,
-) -> tuple[int, str, str, str | None]:
+) -> tuple[int, str, str, str | None, str]:
+    ensure_config_on_cluster(config_path)
     remote_command = build_remote_launch_command(
         run_name=run_name,
+        run_id=run_id,
         git_commit=git_commit,
         config_path=config_path,
         config_overrides=config_overrides,
@@ -174,29 +204,32 @@ def launch_training_run(
     combined_output = "\n".join(part for part in [stdout, stderr] if part)
     job_id = parse_slurm_job_id(combined_output)
 
-    return code, stdout, stderr, job_id
+    return code, stdout, stderr, job_id, remote_command
 
 
 
 def launch_direct_run(
     *,
     run_name: str,
+    run_id: str,
     git_commit: str,
     config_path: str,
     config_overrides: dict[str, Any] | None = None,
     max_steps: int = 50,
-) -> tuple[int, str, str, int | None, str | None]:
+) -> tuple[int, str, str, int | None, str | None, str]:
     """
     Launch a training script directly on M3 via SSH without SLURM.
     Uses nohup so the process survives if the SSH connection drops.
     Returns (exit_code, stdout, stderr, pid, log_path).
     """
+    ensure_config_on_cluster(config_path)
     import json as _json
     overrides_json = _json.dumps(config_overrides or {}, ensure_ascii=False)
     log_path = posixpath.join(
         M3_REPO_PATH, "logs/direct", f"{run_name}.out"
     )
 
+    conda_env = settings.TAP_M3_CONDA_ENV
     script = f"""
 set -e
 cd {shlex.quote(M3_REPO_PATH)}
@@ -205,21 +238,24 @@ export TAP_GIT_COMMIT={shlex.quote(git_commit)}
 export CONFIG_PATH={shlex.quote(config_path)}
 export CONFIG_OVERRIDES_JSON={shlex.quote(overrides_json)}
 export TAP_RUN_NAME={shlex.quote(run_name)}
-export MAX_STEPS={max_steps}
-nohup python train.py \\
+export TAP_RUN_ID={shlex.quote(run_id)}
+export TAP_API_URL={shlex.quote(settings.TAP_API_URL)}
+module load miniforge3
+conda activate {shlex.quote(conda_env)}
+nohup torchrun --nproc_per_node=1 -m src.slm.main \\
     --config {shlex.quote(config_path)} \\
-    --max_steps {max_steps} \\
     > {shlex.quote(log_path)} 2>&1 &
 echo $!
 """.strip()
 
-    code, stdout, stderr = run_ssh_command(f"bash -lc {shlex.quote(script)}")
+    full_command = f"bash -lc {shlex.quote(script)}"
+    code, stdout, stderr = run_ssh_command(full_command)
 
     pid: int | None = None
     if code == 0 and stdout.strip().isdigit():
         pid = int(stdout.strip())
 
-    return code, stdout, stderr, pid, log_path
+    return code, stdout, stderr, pid, log_path, full_command
 
 
 def poll_direct_process(pid: int) -> str:

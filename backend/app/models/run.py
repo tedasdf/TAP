@@ -29,6 +29,14 @@ class Run:
     direct_log_path: str | None = None
     seed: int | None = None
     data_ref: str | None = None
+    # summary metrics — populated when fetched with a metrics JOIN
+    current_step: int | None = None
+    current_epoch: int | None = None
+    training_loss: float | None = None
+    validation_loss: float | None = None
+    runtime: float | None = None
+    learning_rate: float | None = None
+    latest_metric_timestamp: str | None = None
 
     @classmethod
     def from_row(cls, row: Any) -> Run:
@@ -55,6 +63,13 @@ class Run:
             direct_log_path=d.get("direct_log_path"),
             seed=d.get("seed"),
             data_ref=d.get("data_ref"),
+            current_step=d.get("current_step"),
+            current_epoch=d.get("current_epoch"),
+            training_loss=d.get("training_loss"),
+            validation_loss=d.get("validation_loss"),
+            runtime=d.get("runtime"),
+            learning_rate=d.get("learning_rate"),
+            latest_metric_timestamp=d.get("latest_metric_timestamp"),
         )
 
     @property

@@ -51,6 +51,11 @@ class RunService:
         wandb_status: str | None = None
         direct_status: str | None = None
 
+        if not run.wandb_run_id:
+            self._try_extract_wandb_run_id(run)
+            run = self._runs.find(run_id)  # type: ignore[assignment]
+            assert run is not None
+
         if run.launch_mode == "direct" and run.direct_pid:
             direct_status = poll_direct_process(run.direct_pid)
             new_status = direct_status
@@ -125,10 +130,12 @@ class RunService:
         log_path: str | None = None
         error_log_path: str | None = None
 
+        launch_command: str | None = None
         if payload.launch_now:
             if payload.launch_mode == "direct":
-                code, stdout, stderr, pid, direct_log_path = launch_direct_run(
+                code, stdout, stderr, pid, direct_log_path, launch_command = launch_direct_run(
                     run_name=payload.name,
+                    run_id=run_id,
                     git_commit=git_commit,
                     config_path=payload.config_path,
                     config_overrides=payload.config_overrides,
@@ -139,8 +146,9 @@ class RunService:
                     status = "failed"
                     error_message = stderr or f"Direct launch failed with exit code {code}"
             else:
-                code, stdout, stderr, slurm_job_id = launch_training_run(
+                code, stdout, stderr, slurm_job_id, launch_command = launch_training_run(
                     run_name=payload.name,
+                    run_id=run_id,
                     git_commit=git_commit,
                     config_path=payload.config_path,
                     config_overrides=payload.config_overrides,
@@ -168,6 +176,7 @@ class RunService:
             status=status,
             slurm_job_id=slurm_job_id,
             config_file_snapshot=config_file_snapshot,
+            launch_command=launch_command,
         )
 
         run = Run(
@@ -184,6 +193,7 @@ class RunService:
             wandb_run_id=payload.wandb_run_id,
             error_message=error_message,
             launch_mode=payload.launch_mode,
+            template_id=payload.template_id,
             direct_pid=pid if payload.launch_mode == "direct" else None,
             direct_log_path=direct_log_path if payload.launch_mode == "direct" else None,
             seed=payload.seed,
@@ -226,6 +236,23 @@ class RunService:
             ))
 
         return created_run
+
+    def _try_extract_wandb_run_id(self, run: Run) -> None:
+        log_path = run.direct_log_path
+        if not log_path and run.slurm_job_id:
+            job = self._runs.jobs.find(run.slurm_job_id)
+            if job:
+                log_path = job.log_path
+        if not log_path:
+            return
+        try:
+            code, stdout, _ = run_ssh_command(f"grep -m1 'TAP_WANDB_RUN_ID=' {log_path} 2>/dev/null || true")
+            if code == 0 and "TAP_WANDB_RUN_ID=" in stdout:
+                wandb_run_id = stdout.strip().split("TAP_WANDB_RUN_ID=", 1)[1].strip()
+                if wandb_run_id:
+                    self._runs.update(run.run_id, wandb_run_id=wandb_run_id)
+        except Exception:
+            pass
 
     def _sync_slurm(self, run: Run) -> str:
         job_snapshot = refresh_job_from_slurm(run.slurm_job_id)  # type: ignore[arg-type]
@@ -457,12 +484,12 @@ def _build_config_snapshot(
     status: str,
     slurm_job_id: str | None = None,
     config_file_snapshot: dict[str, Any] | None = None,
+    launch_command: str | None = None,
 ) -> dict[str, Any]:
     from app.config import settings
 
     config_overrides = payload.config_overrides or {}
     submitted_at = created_at if payload.launch_now else None
-    launch_command = f"sbatch {payload.submit_script}" if payload.submit_script else None
 
     if config_file_snapshot is None:
         config_file_snapshot = {

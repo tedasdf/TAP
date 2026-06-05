@@ -14,7 +14,7 @@ function CreateRunForm() {
   const [configPath, setConfigPath] = useState(searchParams.get("configPath") ?? "");
   const [configOverrides, setConfigOverrides] = useState("");
   const [wandbConfigRef, setWandbConfigRef] = useState("");
-  const [launchMode, setLaunchMode] = useState<"direct" | "sbatch">("sbatch");
+  const [launchMode, setLaunchMode] = useState<"direct" | "slurm">("slurm");
   const [formError, setFormError] = useState<string | null>(null);
 
   const isSubmitting = createRunMutation.isPending;
@@ -37,7 +37,7 @@ function CreateRunForm() {
       const createdRun = await createRunMutation.mutateAsync({
         name: name.trim(),
         config_path: configPath.trim(),
-        config_overrides: configOverrides.trim() || undefined,
+        config_overrides: configOverrides.trim() ? JSON.parse(configOverrides.trim()) : undefined,
         wandb_config_ref: wandbConfigRef.trim() || undefined,
         launch_mode: launchMode,
         launch_now: true,
@@ -140,10 +140,10 @@ function CreateRunForm() {
               </button>
               <button
                 type="button"
-                onClick={() => setLaunchMode("sbatch")}
+                onClick={() => setLaunchMode("slurm")}
                 disabled={isSubmitting}
                 className={`rounded-xl border px-3 py-2.5 text-left text-sm transition-colors ${
-                  launchMode === "sbatch"
+                  launchMode === "slurm"
                     ? "border-emerald-500 bg-emerald-500/10 text-emerald-300"
                     : "border-zinc-700 bg-black text-zinc-400"
                 }`}

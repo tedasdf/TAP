@@ -1,13 +1,15 @@
 from __future__ import annotations
 
-import os
 import re
+import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Literal
 
 import yaml
 from pydantic import BaseModel, Field
+
+from app.config import settings
 
 
 class SLMConfigGenerateRequest(BaseModel):
@@ -90,32 +92,55 @@ def build_slm_yaml(config: dict) -> str:
     return yaml.safe_dump(config, sort_keys=False)
 
 
-def save_slm_config(config: dict, filename: str | None) -> tuple[str, str]:
-    """Write config YAML to the generated-configs directory.
+def save_slm_config(config: dict, filename: str | None) -> tuple[str, str, str]:
+    """Save config YAML locally. Returns (local_abs_path, relative_config_path, yaml_text).
 
-    Returns (saved_path, yaml_text).
+    relative_config_path is the path relative to the repo root (e.g. configs/generated/foo.yaml)
+    and is what gets stored in the run record and passed to the cluster at launch time.
     """
     yaml_text = build_slm_yaml(config)
-    generated_dir = _get_generated_config_dir()
+    local_dir = Path(settings.TAP_LOCAL_CONFIG_DIR).resolve()
+    local_dir.mkdir(parents=True, exist_ok=True)
 
     experiment_name = config.get("experiment", {}).get("name", "slm-config")
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
     default_filename = f"{experiment_name}-{timestamp}.yaml"
     safe_filename = _slugify_filename(filename or default_filename)
 
-    output_path = (generated_dir / safe_filename).resolve()
-    if generated_dir not in output_path.parents and output_path != generated_dir:
-        raise ValueError("Invalid generated config path")
+    local_path = (local_dir / safe_filename).resolve()
+    if local_dir not in local_path.parents and local_path != local_dir:
+        raise ValueError("Invalid config path")
 
-    output_path.write_text(yaml_text, encoding="utf-8")
-    return str(output_path), yaml_text
+    local_path.write_text(yaml_text, encoding="utf-8")
+
+    relative_path = f"{settings.TAP_M3_CONFIG_DIR}/{safe_filename}"
+    return str(local_path), relative_path, yaml_text
 
 
-def _get_generated_config_dir() -> Path:
-    base = os.environ.get("TAP_GENERATED_CONFIG_DIR", "generated_configs/slm")
-    path = Path(base).resolve()
-    path.mkdir(parents=True, exist_ok=True)
-    return path
+def copy_config_to_cluster(
+    local_path: str,
+    *,
+    cluster_host: str,
+    remote_repo_path: str,
+    relative_config_path: str,
+) -> None:
+    """SCP a local config file to the cluster repo. Idempotent — safe to call before every launch."""
+    remote_path = f"{remote_repo_path}/{relative_config_path}"
+    remote_dir = str(Path(remote_path).parent)
+
+    mkdir = subprocess.run(
+        ["ssh", cluster_host, f"mkdir -p {remote_dir}"],
+        capture_output=True, text=True, check=False,
+    )
+    if mkdir.returncode != 0:
+        raise RuntimeError(f"Could not create remote dir {remote_dir}: {mkdir.stderr}")
+
+    scp = subprocess.run(
+        ["scp", local_path, f"{cluster_host}:{remote_path}"],
+        capture_output=True, text=True, check=False,
+    )
+    if scp.returncode != 0:
+        raise RuntimeError(f"SCP failed: {scp.stderr}")
 
 
 def _slugify_filename(value: str) -> str:

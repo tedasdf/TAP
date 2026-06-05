@@ -59,11 +59,10 @@ export function ConfigTab({
       </div>
 
       <div className="rounded-2xl border border-zinc-800 bg-zinc-900/70 p-4">
-        <h3 className="text-sm font-semibold text-white">Config Snapshot</h3>
+        <h3 className="text-sm font-semibold text-white">Config File</h3>
         <pre className="mt-3 max-h-96 overflow-auto whitespace-pre-wrap break-words text-sm text-zinc-300">
-          {configSnapshot
-            ? JSON.stringify(configSnapshot, null, 2)
-            : "No config snapshot stored"}
+          {(configSnapshot?.config_file as { content?: string } | undefined)?.content
+            ?? "No config file snapshot stored"}
         </pre>
       </div>
 
