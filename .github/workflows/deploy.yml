@@ -19,6 +19,9 @@ jobs:
             cd $GITHUB_WORKSPACE
           fi
 
+      - name: Inject env file
+        run: cp ~/tap.env $GITHUB_WORKSPACE/.env
+
       - name: Stop existing containers
         run: |
           cd $GITHUB_WORKSPACE
