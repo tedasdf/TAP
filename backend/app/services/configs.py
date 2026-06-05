@@ -12,12 +12,46 @@ _BASE_CONFIG: dict[str, Any] = {
     },
     "model": {
         "type": "decoder_transformer",
-        "vocab_size": 50257,
-        "seq_len": 256,
+        "model_dim": 512,
+        "num_layers": 8,
+        "num_heads": 8,
+        "num_kv_heads": 8,
+        "vocab_size": 32000,
+        "max_seq_len": 512,
+        "attention_type": "baseline",
+        "normalization": "rmsnorm",
+        "mlp_type": "relu2",
+        "rope_base": 10000,
+        "logit_softcap": None,
+        "init": {
+            "use_fan_in_init": True,
+        },
+    },
+    "attention": {
+        "qk_norm": False,
+        "window_size": None,
     },
     "training": {
+        "batch_size": 32,
+        "grad_accum_steps": 8,
+        "max_steps": 10000,
+        "learning_rate": 3e-4,
+        "min_lr": 1e-5,
+        "warmup_steps": 5000,
         "optimizer": "adamw",
         "scheduler": "cosine",
+        "beta1": 0.9,
+        "beta2": 0.95,
+        "epsilon": 1e-8,
+        "weight_decay": 1e-4,
+        "grad_clip": 1.0,
+        "precision": "bf16",
+        "seed": None,
+        "z_loss_coeff": 0.0,
+    },
+    "trainer": {
+        "compile_model": False,
+        "resume_from_checkpoint": None,
     },
     "data": {
         "mode": "text",
@@ -28,12 +62,14 @@ _BASE_CONFIG: dict[str, Any] = {
         "train_split_name": "train",
         "streaming": True,
         "text_fields": ["text"],
+        "hf_revision": None,
     },
     "tracking": {
         "wandb_enabled": True,
     },
     "tokenizer": {
         "type": "bpe",
+        "path": None,
     },
 }
 

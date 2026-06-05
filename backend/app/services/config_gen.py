@@ -16,23 +16,55 @@ class SLMConfigGenerateRequest(BaseModel):
     experiment_name: str = Field(default="slm-smoke")
     model_name: str = Field(default="small-transformer")
 
-    vocab_size: int = Field(default=50257, ge=1)
-    seq_len: int = Field(default=256, ge=8)
-    d_model: int = Field(default=256, ge=16)
-    n_layers: int = Field(default=4, ge=1)
-    n_heads: int = Field(default=4, ge=1)
+    # Model architecture — names match slm_repo keys exactly
+    vocab_size: int = Field(default=32000, ge=1)
+    max_seq_len: int = Field(default=512, ge=8)
+    model_dim: int = Field(default=512, ge=16)
+    num_layers: int = Field(default=8, ge=1)
+    num_heads: int = Field(default=8, ge=1)
+    num_kv_heads: int | None = None       # None → MHA (same as num_heads)
+    rope_base: int = Field(default=10000, ge=1)
+    logit_softcap: float | None = None
+    use_fan_in_init: bool = True
 
-    batch_size: int = Field(default=4, ge=1)
-    max_steps: int = Field(default=100, ge=1)
-    learning_rate: float = Field(default=3e-4, gt=0)
-
-    dataset_source: Literal["fineweb_edu", "local_jsonl", "synthetic"] = "fineweb_edu"
+    # Attention knobs
     attention_type: str = Field(default="baseline")
+    qk_norm: bool = False
+    window_size: int | None = None        # required when attention_type=swa
+
+    # Norm / MLP
     normalization: str = Field(default="rmsnorm")
-    mlp_type: str = Field(default="gelu")
+    mlp_type: str = Field(default="relu2")
+
+    # Training
+    batch_size: int = Field(default=32, ge=1)
+    grad_accum_steps: int = Field(default=8, ge=1)
+    max_steps: int = Field(default=10000, ge=1)
+    learning_rate: float = Field(default=3e-4, gt=0)
+    min_lr: float = Field(default=1e-5, gt=0)
+    warmup_steps: int = Field(default=5000, ge=0)
     optimizer: str = Field(default="adamw")
     scheduler: str = Field(default="cosine")
+    beta1: float = Field(default=0.9, gt=0, lt=1)
+    beta2: float = Field(default=0.95, gt=0, lt=1)
+    epsilon: float = Field(default=1e-8, gt=0)
+    weight_decay: float = Field(default=1e-4, ge=0)
+    grad_clip: float = Field(default=1.0, gt=0)
+    precision: Literal["bf16", "fp32"] = "bf16"
+    seed: int | None = None
+    z_loss_coeff: float = Field(default=0.0, ge=0)
+
+    # Trainer
+    compile_model: bool = False
+    resume_from_checkpoint: str | None = None
+
+    # Data
+    dataset_source: Literal["fineweb_edu", "local_jsonl", "synthetic"] = "fineweb_edu"
+    hf_revision: str | None = None
+
+    # Tokenizer
     tokenizer: str = Field(default="bpe")
+    tokenizer_path: str | None = None
 
 
 class SLMConfigSaveRequest(SLMConfigGenerateRequest):
@@ -50,21 +82,48 @@ def generate_slm_config(payload: SLMConfigGenerateRequest) -> dict:
         "model": {
             "name": payload.model_name,
             "type": "decoder_transformer",
+            "model_dim": payload.model_dim,
+            "num_layers": payload.num_layers,
+            "num_heads": payload.num_heads,
+            "num_kv_heads": payload.num_kv_heads
+                if payload.num_kv_heads is not None
+                else payload.num_heads,
+            "vocab_size": payload.vocab_size,
+            "max_seq_len": payload.max_seq_len,
             "attention_type": payload.attention_type,
             "normalization": payload.normalization,
             "mlp_type": payload.mlp_type,
-            "vocab_size": payload.vocab_size,
-            "seq_len": payload.seq_len,
-            "d_model": payload.d_model,
-            "n_layers": payload.n_layers,
-            "n_heads": payload.n_heads,
+            "rope_base": payload.rope_base,
+            "logit_softcap": payload.logit_softcap,
+            "init": {
+                "use_fan_in_init": payload.use_fan_in_init,
+            },
+        },
+        "attention": {
+            "qk_norm": payload.qk_norm,
+            "window_size": payload.window_size,
         },
         "training": {
             "batch_size": payload.batch_size,
+            "grad_accum_steps": payload.grad_accum_steps,
             "max_steps": payload.max_steps,
             "learning_rate": payload.learning_rate,
+            "min_lr": payload.min_lr,
+            "warmup_steps": payload.warmup_steps,
             "optimizer": payload.optimizer,
             "scheduler": payload.scheduler,
+            "beta1": payload.beta1,
+            "beta2": payload.beta2,
+            "epsilon": payload.epsilon,
+            "weight_decay": payload.weight_decay,
+            "grad_clip": payload.grad_clip,
+            "precision": payload.precision,
+            "seed": payload.seed,
+            "z_loss_coeff": payload.z_loss_coeff,
+        },
+        "trainer": {
+            "compile_model": payload.compile_model,
+            "resume_from_checkpoint": payload.resume_from_checkpoint,
         },
         "data": {
             "mode": "text",
@@ -75,15 +134,14 @@ def generate_slm_config(payload: SLMConfigGenerateRequest) -> dict:
             "train_split_name": "train",
             "streaming": True,
             "text_fields": ["text"],
-            "max_train_samples": 1000,
-            "val_fraction": 0.01,
-            "max_val_samples": 100,
+            "hf_revision": payload.hf_revision,
         },
         "tracking": {
             "wandb_enabled": True,
         },
         "tokenizer": {
             "type": payload.tokenizer,
+            "path": payload.tokenizer_path,
         },
     }
 
