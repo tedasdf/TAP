@@ -140,15 +140,11 @@ def build_remote_launch_command(
 
     script = f"""
         set -e
-        [ -f ~/.bash_profile ] && . ~/.bash_profile || true
         cd {shlex.quote(M3_REPO_PATH)}
-        export TAP_GIT_COMMIT={shlex.quote(git_commit)}
-        export CONFIG_PATH={shlex.quote(config_path)}
-        export CONFIG_OVERRIDES_JSON={shlex.quote(overrides_json)}
-        export TAP_RUN_NAME={shlex.quote(run_name)}
-        export TAP_RUN_ID={shlex.quote(run_id)}
-        export TAP_API_URL={shlex.quote(tap_api_url)}
-        sbatch --job-name={shlex.quote(run_name)} --export=ALL {shlex.quote(submit_script)}
+        sbatch \
+            --job-name={shlex.quote(run_name)} \
+            --export=CONFIG_PATH={shlex.quote(config_path)},CONFIG_OVERRIDES_JSON={shlex.quote(overrides_json)},TAP_GIT_COMMIT={shlex.quote(git_commit)},TAP_RUN_NAME={shlex.quote(run_name)},TAP_RUN_ID={shlex.quote(run_id)},TAP_API_URL={shlex.quote(tap_api_url)} \
+            {shlex.quote(submit_script)}
     """.strip()
 
     return f"bash -lc {shlex.quote(script)}"
