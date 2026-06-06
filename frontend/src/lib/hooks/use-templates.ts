@@ -9,7 +9,7 @@ import {
   getTemplates,
   launchTemplate,
 } from "@/lib/api/templates";
-import type { CreateTemplatePayload } from "@/lib/types/api";
+import type { ApiTemplate, CreateTemplatePayload } from "@/lib/types/api";
 
 export function useTemplates() {
   return useQuery({
@@ -22,7 +22,7 @@ export function useTemplates() {
 export function useTemplate(templateId: string) {
   return useQuery({
     queryKey: ["templates", templateId],
-    queryFn: () => getTemplate(templateId),
+    queryFn: () => getTemplate(templateId) as Promise<ApiTemplate>,
     enabled: !!templateId,
   });
 }

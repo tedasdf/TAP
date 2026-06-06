@@ -2,8 +2,8 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { useParams } from "next/navigation";
-import { ArrowLeft, GitBranch, Rocket } from "lucide-react";
+import { useParams, useRouter } from "next/navigation";
+import { ArrowLeft, Copy, GitBranch, Rocket } from "lucide-react";
 import { AppShell } from "@/components/layout/app-shell";
 import { EmptyState } from "@/components/shared/empty-state";
 import { LoadingState } from "@/components/shared/loading-state";
@@ -219,12 +219,22 @@ const TABS: { id: Tab; label: string }[] = [
 ];
 
 export default function TemplateDetailPage() {
+  const router = useRouter();
   const { templateId } = useParams<{ templateId: string }>();
   const { data: tpl, isLoading, isError } = useTemplate(templateId);
   const { data: templateRuns } = useTemplateRuns(templateId);
   const { mutate: launch, isPending: launching } = useLaunchTemplate();
   const [activeTab, setActiveTab] = useState<Tab>("config");
   const [launchError, setLaunchError] = useState<string | null>(null);
+
+  function handleCopy() {
+    if (!tpl) return;
+    sessionStorage.setItem(
+      "tap_template_copy",
+      JSON.stringify({ name: tpl.name, params: tpl.params }),
+    );
+    router.push("/templates/new");
+  }
 
   if (isLoading) {
     return (
@@ -351,15 +361,25 @@ export default function TemplateDetailPage() {
               <span className="ml-2 text-amber-400">· runs active</span>
             )}
           </span>
-          <button
-            type="button"
-            onClick={handleLaunch}
-            disabled={launchDisabled}
-            className="inline-flex items-center gap-1.5 rounded-xl bg-white px-4 py-2.5 text-sm font-medium text-black transition hover:bg-zinc-200 disabled:opacity-40"
-          >
-            <Rocket className="h-4 w-4" />
-            {launching ? "Launching…" : "Launch all runs"}
-          </button>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={handleCopy}
+              className="inline-flex items-center gap-1.5 rounded-xl border border-zinc-700 px-4 py-2.5 text-sm font-medium text-zinc-100 transition hover:bg-zinc-800"
+            >
+              <Copy className="h-4 w-4" />
+              Copy
+            </button>
+            <button
+              type="button"
+              onClick={handleLaunch}
+              disabled={launchDisabled}
+              className="inline-flex items-center gap-1.5 rounded-xl bg-white px-4 py-2.5 text-sm font-medium text-black transition hover:bg-zinc-200 disabled:opacity-40"
+            >
+              <Rocket className="h-4 w-4" />
+              {launching ? "Launching…" : "Launch all runs"}
+            </button>
+          </div>
         </div>
       </div>
     </AppShell>

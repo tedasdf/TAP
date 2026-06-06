@@ -2,7 +2,8 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { ChevronRight, GitBranch, LayoutTemplate, Plus, Rocket } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { ChevronRight, Copy, GitBranch, LayoutTemplate, Plus, Rocket } from "lucide-react";
 import { AppShell } from "@/components/layout/app-shell";
 import { EmptyState } from "@/components/shared/empty-state";
 import { LoadingState } from "@/components/shared/loading-state";
@@ -27,11 +28,13 @@ function combinationCount(params: Record<string, ParamSpec>): number {
 function TemplateCard({
   template,
   onPreview,
+  onCopy,
   onLaunch,
   launching,
 }: {
   template: ApiTemplate;
   onPreview: (id: string) => void;
+  onCopy: (t: ApiTemplate) => void;
   onLaunch: (id: string) => void;
   launching: boolean;
 }) {
@@ -80,6 +83,14 @@ function TemplateCard({
         </button>
         <button
           type="button"
+          onClick={() => onCopy(template)}
+          className="flex items-center justify-center gap-1 rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-1.5 text-xs font-medium text-zinc-200 transition hover:bg-zinc-700"
+          title="Copy template"
+        >
+          <Copy className="h-3.5 w-3.5" />
+        </button>
+        <button
+          type="button"
           onClick={() => onLaunch(template.template_id)}
           disabled={launching}
           className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-white py-1.5 text-xs font-medium text-black transition hover:bg-zinc-200 disabled:opacity-50"
@@ -93,6 +104,7 @@ function TemplateCard({
 }
 
 export default function TemplatesPage() {
+  const router = useRouter();
   const { data, isLoading, isError } = useTemplates();
   const { mutate: launch, isPending } = useLaunchTemplate();
   const [confirmId, setConfirmId] = useState<string | null>(null);
@@ -100,6 +112,14 @@ export default function TemplatesPage() {
 
   function handleLaunchClick(id: string) {
     setConfirmId(id);
+  }
+
+  function handleCopy(template: ApiTemplate) {
+    sessionStorage.setItem(
+      "tap_template_copy",
+      JSON.stringify({ name: template.name, params: template.params }),
+    );
+    router.push("/templates/new");
   }
 
   function handleConfirm() {
@@ -197,6 +217,7 @@ export default function TemplatesPage() {
                 <TemplateCard
                   template={t}
                   onPreview={setPreviewId}
+                  onCopy={handleCopy}
                   onLaunch={handleLaunchClick}
                   launching={isPending && confirmId === t.template_id}
                 />

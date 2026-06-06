@@ -471,6 +471,7 @@ export default function NewTemplatePage() {
   const [touched, setTouched] = useState(false);
 
   useEffect(() => {
+    // Seed from a "Use as Template" click on a run config
     const raw = sessionStorage.getItem("tap_template_seed");
     if (!raw) return;
     sessionStorage.removeItem("tap_template_seed");
@@ -490,6 +491,37 @@ export default function NewTemplatePage() {
       });
     } catch {
       // ignore malformed seed
+    }
+  }, []);
+
+  useEffect(() => {
+    // Restore full state from a "Copy template" click
+    const raw = sessionStorage.getItem("tap_template_copy");
+    if (!raw) return;
+    sessionStorage.removeItem("tap_template_copy");
+    try {
+      const copied = JSON.parse(raw) as {
+        name?: string;
+        params: Record<string, { role: string; value?: unknown; values?: unknown[]; expr?: string; from?: string }>;
+      };
+      if (copied.name) setName(`${copied.name} copy`);
+      setParamState((prev) => {
+        const next = { ...prev };
+        for (const p of PARAMS) {
+          const spec = copied.params[p.key];
+          if (!spec) continue;
+          if (spec.role === "fixed" && (typeof spec.value === "string" || typeof spec.value === "number")) {
+            next[p.key] = { ...next[p.key], role: "fixed", fixedValue: spec.value };
+          } else if (spec.role === "vary" && Array.isArray(spec.values) && spec.values.length > 0) {
+            next[p.key] = { ...next[p.key], role: "vary", varyValues: spec.values as (string | number)[] };
+          } else if (spec.role === "derive" && p.canDerive) {
+            next[p.key] = { ...next[p.key], role: "derive" };
+          }
+        }
+        return next;
+      });
+    } catch {
+      // ignore malformed copy payload
     }
   }, []);
 
