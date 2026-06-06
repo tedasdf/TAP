@@ -131,6 +131,7 @@ def build_remote_launch_command(
     run_id: str,
     git_commit: str,
     config_path: str,
+    wandb_run_id: str | None = None,
     config_overrides: dict[str, Any] | None = None,
     submit_script: str | None = None,
 ) -> str:
@@ -138,12 +139,25 @@ def build_remote_launch_command(
     overrides_json = json.dumps(config_overrides or {}, ensure_ascii=False)
     tap_api_url = settings.TAP_API_URL
 
+    exports = (
+        f"CONFIG_PATH={shlex.quote(config_path)}"
+        f",CONFIG_OVERRIDES_JSON={shlex.quote(overrides_json)}"
+        f",TAP_GIT_COMMIT={shlex.quote(git_commit)}"
+        f",TAP_RUN_NAME={shlex.quote(run_name)}"
+        f",TAP_RUN_ID={shlex.quote(run_id)}"
+        f",TAP_API_URL={shlex.quote(tap_api_url)}"
+    )
+    if wandb_run_id:
+        exports += f",WANDB_RUN_ID={shlex.quote(wandb_run_id)}"
+        exports += f",WANDB_PROJECT={shlex.quote(settings.WANDB_PROJECT)}"
+        exports += f",WANDB_ENTITY={shlex.quote(settings.WANDB_ENTITY)}"
+
     script = f"""
         set -e
         cd {shlex.quote(M3_REPO_PATH)}
         sbatch \
             --job-name={shlex.quote(run_name)} \
-            --export=CONFIG_PATH={shlex.quote(config_path)},CONFIG_OVERRIDES_JSON={shlex.quote(overrides_json)},TAP_GIT_COMMIT={shlex.quote(git_commit)},TAP_RUN_NAME={shlex.quote(run_name)},TAP_RUN_ID={shlex.quote(run_id)},TAP_API_URL={shlex.quote(tap_api_url)} \
+            --export={exports} \
             {shlex.quote(submit_script)}
     """.strip()
 
@@ -184,6 +198,7 @@ def launch_training_run(
     run_id: str,
     git_commit: str,
     config_path: str,
+    wandb_run_id: str | None = None,
     config_overrides: dict[str, Any] | None = None,
     submit_script: str | None = None,
 ) -> tuple[int, str, str, str | None, str]:
@@ -193,6 +208,7 @@ def launch_training_run(
         run_id=run_id,
         git_commit=git_commit,
         config_path=config_path,
+        wandb_run_id=wandb_run_id,
         config_overrides=config_overrides,
         submit_script=submit_script,
     )
@@ -211,13 +227,14 @@ def launch_direct_run(
     run_id: str,
     git_commit: str,
     config_path: str,
+    wandb_run_id: str | None = None,
     config_overrides: dict[str, Any] | None = None,
     max_steps: int = 50,
 ) -> tuple[int, str, str, int | None, str | None, str]:
     """
     Launch a training script directly on M3 via SSH without SLURM.
     Uses nohup so the process survives if the SSH connection drops.
-    Returns (exit_code, stdout, stderr, pid, log_path).
+    Returns (exit_code, stdout, stderr, pid, log_path, command).
     """
     ensure_config_on_cluster(config_path)
     import json as _json
@@ -225,6 +242,14 @@ def launch_direct_run(
     log_path = posixpath.join(
         M3_REPO_PATH, "logs/direct", f"{run_name}.out"
     )
+
+    wandb_exports = ""
+    if wandb_run_id:
+        wandb_exports = (
+            f"export WANDB_RUN_ID={shlex.quote(wandb_run_id)}\n"
+            f"export WANDB_PROJECT={shlex.quote(settings.WANDB_PROJECT)}\n"
+            f"export WANDB_ENTITY={shlex.quote(settings.WANDB_ENTITY)}\n"
+        )
 
     conda_env = settings.TAP_M3_CONDA_ENV
     script = f"""
@@ -237,7 +262,7 @@ export CONFIG_OVERRIDES_JSON={shlex.quote(overrides_json)}
 export TAP_RUN_NAME={shlex.quote(run_name)}
 export TAP_RUN_ID={shlex.quote(run_id)}
 export TAP_API_URL={shlex.quote(settings.TAP_API_URL)}
-module load miniforge3
+{wandb_exports}module load miniforge3
 conda activate {shlex.quote(conda_env)}
 nohup torchrun --nproc_per_node=1 -m src.slm.main \\
     --config {shlex.quote(config_path)} \\

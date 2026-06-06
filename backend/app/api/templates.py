@@ -269,6 +269,7 @@ def launch_template(template_id: str, payload: TemplateLaunchPayload) -> Templat
                 relative_config_path=relative_path,
             )
 
+            import uuid as _uuid
             run_payload = RunCreate(
                 name=exp_name,
                 git_commit=payload.git_commit,
@@ -277,6 +278,7 @@ def launch_template(template_id: str, payload: TemplateLaunchPayload) -> Templat
                 launch_now=True,
                 launch_mode=payload.launch_mode,
                 template_id=template_id,
+                wandb_run_id=f"tap-{_uuid.uuid4().hex[:8]}",
             )
 
             with get_db() as conn:

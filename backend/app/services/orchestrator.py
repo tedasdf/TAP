@@ -82,6 +82,7 @@ class TemplatePromoter:
                 run_id=run_id,
                 git_commit=run["git_commit"],
                 config_path=run["config_path"],
+                wandb_run_id=run.get("wandb_run_id"),
             )
             combined = "\n".join(p for p in [stdout, stderr] if p)
             if code == 0 and slurm_job_id:

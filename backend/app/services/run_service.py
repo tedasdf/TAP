@@ -51,11 +51,6 @@ class RunService:
         wandb_status: str | None = None
         direct_status: str | None = None
 
-        if not run.wandb_run_id:
-            self._try_extract_wandb_run_id(run)
-            run = self._runs.find(run_id)  # type: ignore[assignment]
-            assert run is not None
-
         if run.launch_mode == "direct" and run.direct_pid:
             direct_status = poll_direct_process(run.direct_pid)
             new_status = direct_status
@@ -124,6 +119,10 @@ class RunService:
         git_state = get_remote_git_state()
         git_commit = _resolve_git_commit(payload.git_commit, git_state["commit"])
 
+        # Pre-generate wandb_run_id so it's stored before the job starts.
+        # The training script reads WANDB_RUN_ID from env and calls wandb.init(id=...).
+        wandb_run_id = payload.wandb_run_id or f"tap-{uuid.uuid4().hex[:8]}"
+
         status = "created"
         slurm_job_id: str | None = None
         error_message: str | None = None
@@ -138,6 +137,7 @@ class RunService:
                     run_id=run_id,
                     git_commit=git_commit,
                     config_path=payload.config_path,
+                    wandb_run_id=wandb_run_id,
                     config_overrides=payload.config_overrides,
                 )
                 if code == 0 and pid:
@@ -151,6 +151,7 @@ class RunService:
                     run_id=run_id,
                     git_commit=git_commit,
                     config_path=payload.config_path,
+                    wandb_run_id=wandb_run_id,
                     config_overrides=payload.config_overrides,
                     submit_script=payload.submit_script,
                 )
@@ -190,7 +191,7 @@ class RunService:
             config_snapshot=config_snapshot,
             wandb_config_ref=payload.wandb_config_ref,
             slurm_job_id=slurm_job_id,
-            wandb_run_id=payload.wandb_run_id,
+            wandb_run_id=wandb_run_id,
             error_message=error_message,
             launch_mode=payload.launch_mode,
             template_id=payload.template_id,
@@ -236,24 +237,6 @@ class RunService:
             ))
 
         return created_run
-
-    def _try_extract_wandb_run_id(self, run: Run) -> None:
-        log_path = run.direct_log_path
-        if not log_path and run.slurm_job_id:
-            job = self._runs.jobs.find(run.slurm_job_id)
-            if job:
-                log_path = job.log_path
-        if not log_path:
-            return
-        try:
-            import shlex
-            code, stdout, _ = run_ssh_command(f"grep -m1 'TAP_WANDB_RUN_ID=' {shlex.quote(log_path)} 2>/dev/null || true")
-            if code == 0 and "TAP_WANDB_RUN_ID=" in stdout:
-                wandb_run_id = stdout.strip().split("TAP_WANDB_RUN_ID=", 1)[1].strip()
-                if wandb_run_id:
-                    self._runs.update(run.run_id, wandb_run_id=wandb_run_id)
-        except Exception:
-            pass
 
     def _sync_slurm(self, run: Run) -> str:
         job_snapshot = refresh_job_from_slurm(run.slurm_job_id)  # type: ignore[arg-type]

@@ -66,6 +66,7 @@ class TemplateRepository(BaseRepository):
             """
             SELECT
                 r.run_id, r.name, r.git_commit, r.config_path, r.template_id,
+                r.wandb_run_id,
                 (
                     SELECT COUNT(*) FROM runs r2
                     WHERE r2.template_id = r.template_id
