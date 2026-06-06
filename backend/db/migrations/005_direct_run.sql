@@ -1,3 +1,0 @@
-ALTER TABLE runs ADD COLUMN launch_mode TEXT NOT NULL DEFAULT 'slurm';
-ALTER TABLE runs ADD COLUMN direct_pid INTEGER;
-ALTER TABLE runs ADD COLUMN direct_log_path TEXT;
