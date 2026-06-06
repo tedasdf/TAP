@@ -31,6 +31,10 @@ const PARAMS: ParamDef[] = [
     key: "data.seq_len", label: "seq_len", section: "data",
     options: [128, 256, 512, 1024], canDerive: false,
   },
+  {
+    key: "data.batch_size", label: "batch_size", section: "data",
+    options: [4, 8, 16, 32], canDerive: false,
+  },
 
   // ── Tokenizer ────────────────────────────────────────────────────────────
   {
@@ -40,41 +44,41 @@ const PARAMS: ParamDef[] = [
 
   // ── Model Architecture ───────────────────────────────────────────────────
   {
-    key: "model.d_model", label: "model_dim", section: "model",
+    key: "model.model_dim", label: "model_dim", section: "model",
     options: [128, 256, 512, 1024], canDerive: false,
   },
   {
-    key: "model.n_layers", label: "num_layers", section: "model",
+    key: "model.num_layers", label: "num_layers", section: "model",
     options: [4, 6, 8, 12], canDerive: false,
   },
   {
-    key: "model.n_heads", label: "num_heads", section: "model",
+    key: "model.attention.num_heads", label: "num_heads", section: "model",
     options: [2, 4, 8, 16], canDerive: true,
-    deriveExpr: "model.d_model / 64", deriveFrom: "model.d_model",
+    deriveExpr: "model.model_dim / 64", deriveFrom: "model.model_dim",
   },
   {
-    key: "model.n_kv_heads", label: "num_kv_heads", section: "model",
+    key: "model.attention.num_kv_heads", label: "num_kv_heads", section: "model",
     options: [1, 2, 4, 8], canDerive: true,
-    deriveExpr: "model.n_heads / 2", deriveFrom: "model.n_heads",
+    deriveExpr: "model.attention.num_heads / 2", deriveFrom: "model.attention.num_heads",
   },
   {
-    key: "model.attention_type", label: "attention_type", section: "model",
+    key: "model.attention.attention_type", label: "attention_type", section: "model",
     options: ["baseline", "gqa"], canDerive: false,
   },
   {
-    key: "model.mlp_type", label: "mlp_type", section: "model",
+    key: "model.mlp.mlp_type", label: "mlp_type", section: "model",
     options: ["gelu", "relu2", "swiglu"], canDerive: false,
   },
   {
-    key: "model.mlp_mult", label: "mlp_mult", section: "model",
+    key: "model.mlp.mlp_mult", label: "mlp_mult", section: "model",
     options: [2.0, 4.0, 8.0], canDerive: false,
   },
   {
-    key: "model.normalization", label: "norm_type", section: "model",
+    key: "model.norm_type", label: "norm_type", section: "model",
     options: ["rmsnorm", "layernorm"], canDerive: false,
   },
   {
-    key: "model.rope_base", label: "rope_base", section: "model",
+    key: "model.attention.rope_base", label: "rope_base", section: "model",
     options: [1000, 10000, 100000], canDerive: false,
   },
 
@@ -84,11 +88,7 @@ const PARAMS: ParamDef[] = [
     options: [500, 1000, 5000, 10000], canDerive: false,
   },
   {
-    key: "trainer.batch_size", label: "batch_size", section: "training",
-    options: [4, 8, 16, 32], canDerive: false,
-  },
-  {
-    key: "trainer.grad_accum", label: "grad_accum_steps", section: "training",
+    key: "trainer.grad_accum_steps", label: "grad_accum_steps", section: "training",
     options: [1, 4, 8, 16], canDerive: false,
   },
   {
@@ -100,7 +100,7 @@ const PARAMS: ParamDef[] = [
     options: [42, 123, 456], canDerive: false,
   },
   {
-    key: "optimizer.type", label: "optimizer", section: "training",
+    key: "optimizer.optimizer_type", label: "optimizer", section: "training",
     options: ["adamw", "sgd"], canDerive: false,
   },
   {
@@ -112,7 +112,7 @@ const PARAMS: ParamDef[] = [
     options: [0.0, 1e-4, 1e-2, 0.1], canDerive: false,
   },
   {
-    key: "scheduler.type", label: "scheduler", section: "training",
+    key: "scheduler.scheduler_type", label: "scheduler", section: "training",
     options: ["cosine_with_warmup", "constant"], canDerive: false,
   },
   {

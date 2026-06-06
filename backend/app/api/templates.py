@@ -27,40 +27,40 @@ router = APIRouter(tags=["templates"])
 
 # Maps template dotted-key params → SLMConfigGenerateRequest field names
 _PARAM_KEY_MAP: dict[str, str] = {
-    # Model Architecture
-    "model.d_model":          "model_dim",
-    "model.n_layers":         "num_layers",
-    "model.n_heads":          "num_heads",
-    "model.n_kv_heads":       "num_kv_heads",
-    "model.attention_type":   "attention_type",
-    "model.mlp_type":         "mlp_type",
-    "model.mlp_mult":         "mlp_mult",
-    "model.normalization":    "norm_type",
-    "model.rope_base":        "rope_base",
-    "model.vocab_size":       "vocab_size",
+    # Model — flat keys match flattened YAML paths from slm_repo RunConfig
+    "model.model_dim":                 "model_dim",
+    "model.num_layers":                "num_layers",
+    "model.norm_type":                 "norm_type",
+    "model.vocab_size":                "vocab_size",
+    "model.attention.attention_type":  "attention_type",
+    "model.attention.num_heads":       "num_heads",
+    "model.attention.num_kv_heads":    "num_kv_heads",
+    "model.attention.rope_base":       "rope_base",
+    "model.mlp.mlp_type":              "mlp_type",
+    "model.mlp.mlp_mult":              "mlp_mult",
     # Optimizer
-    "optimizer.type":         "optimizer_type",
-    "optimizer.lr":           "learning_rate",
-    "optimizer.weight_decay": "weight_decay",
-    "optimizer.beta1":        "beta1",
-    "optimizer.beta2":        "beta2",
+    "optimizer.optimizer_type":        "optimizer_type",
+    "optimizer.lr":                    "learning_rate",
+    "optimizer.weight_decay":          "weight_decay",
+    "optimizer.beta1":                 "beta1",
+    "optimizer.beta2":                 "beta2",
     # Scheduler
-    "scheduler.type":         "scheduler_type",
-    "scheduler.warmup_steps": "warmup_steps",
+    "scheduler.scheduler_type":        "scheduler_type",
+    "scheduler.warmup_steps":          "warmup_steps",
     # Trainer
-    "trainer.max_steps":      "max_steps",
-    "trainer.batch_size":     "batch_size",
-    "trainer.grad_accum":     "grad_accum_steps",
-    "trainer.precision":      "precision",
-    "trainer.seed":           "seed",
-    "trainer.grad_clip":      "grad_clip",
-    "trainer.eval_every":     "eval_every",
-    "trainer.z_loss":         "z_loss_coeff",
+    "trainer.max_steps":               "max_steps",
+    "trainer.grad_accum_steps":        "grad_accum_steps",
+    "trainer.clip_grad_norm":          "grad_clip",
+    "trainer.precision":               "precision",
+    "trainer.seed":                    "seed",
+    "trainer.eval_every":              "eval_every",
+    "trainer.z_loss_coeff":            "z_loss_coeff",
     # Data
-    "data.seq_len":           "seq_len",
-    "data.dataset_name":      "dataset_name",
+    "data.batch_size":                 "batch_size",
+    "data.seq_len":                    "seq_len",
+    "data.dataset_name":               "dataset_name",
     # Tokenizer
-    "tokenizer.vocab_size":   "vocab_size",
+    "tokenizer.vocab_size":            "vocab_size",
 }
 
 _SAFE_OPS = {
