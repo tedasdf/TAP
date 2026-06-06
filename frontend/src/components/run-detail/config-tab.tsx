@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { LayoutTemplate } from "lucide-react";
+import yaml from "js-yaml";
 
 type ConfigTabProps = {
   configPath: string;
@@ -34,7 +35,21 @@ export function ConfigTab({
   const router = useRouter();
 
   function handleUseAsTemplate() {
-    const source = configSnapshot ?? configOverrides;
+    const yamlContent = (configSnapshot?.config_file as { content?: string } | undefined)?.content;
+    if (yamlContent) {
+      try {
+        const parsed = yaml.load(yamlContent) as Record<string, unknown>;
+        if (parsed && typeof parsed === "object") {
+          const flat = flattenObject(parsed);
+          sessionStorage.setItem("tap_template_seed", JSON.stringify(flat));
+          router.push("/templates/new");
+          return;
+        }
+      } catch {
+        // fall through to config overrides
+      }
+    }
+    const source = configOverrides;
     if (source) {
       const flat = flattenObject(source);
       sessionStorage.setItem("tap_template_seed", JSON.stringify(flat));
