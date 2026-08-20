@@ -1,7 +1,12 @@
 # Secrets
 .env
+.env.*
+!.env.example
 *.pem
 *-key.pem
+*.key
+*.p12
+*.pfx
 
 # Python
 __pycache__/
@@ -20,6 +25,7 @@ backend/.ruff_cache/
 backend/.coverage
 backend/htmlcov/
 backend/.env
+backend/.env.*
 backend/*.db
 backend/*.sqlite
 backend/*.sqlite3
@@ -42,6 +48,11 @@ frontend/.env.local
 frontend/.env.development.local
 frontend/.env.test.local
 frontend/.env.production.local
+
+# Local credentials and SSH material
+.ssh/
+credentials/
+secrets/
 
 # Logs
 *.log

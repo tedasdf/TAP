@@ -1,7 +1,12 @@
 import type { NextConfig } from "next";
 
+const allowedDevOrigins = (process.env.ALLOWED_DEV_ORIGINS ?? "")
+  .split(",")
+  .map((origin) => origin.trim())
+  .filter(Boolean);
+
 const nextConfig: NextConfig = {
-  allowedDevOrigins: ["100.65.199.35", "192.168.0.42"],
+  allowedDevOrigins,
   async headers() {
     return [
       {
